@@ -1,0 +1,39 @@
+  {
+    "name": "gymstartbe",
+    "version": "1.0.0",
+    "type": "module",
+    "main": "index.js",
+    "scripts": {
+      "test": "echo \"Error: no test specified\" && exit 1",
+      "start": "cross-env NODE_ENV=production node index.js",
+      "start:dev": "cross-env NODE_ENV=development nodemon index.js"
+    },
+    "repository": {
+      "type": "git",
+      "url": "git+https://github.com/sieunhan12B/GymStarBE.git"
+    },
+    "author": "",
+    "license": "ISC",
+    "bugs": {
+      "url": "https://github.com/sieunhan12B/GymStarBE/issues"
+    },
+    "homepage": "https://github.com/sieunhan12B/GymStarBE#readme",
+    "description": "",
+    "dependencies": {
+      "@sendgrid/mail": "^8.1.6",
+      "bcryptjs": "^3.0.3",
+      "cookie-parser": "^1.4.7",
+      "cors": "^2.8.5",
+      "cross-env": "^10.1.0",
+      "dotenv": "^17.2.3",
+      "express": "^5.1.0",
+      "jsonwebtoken": "^9.0.2",
+      "nodemailer": "^7.0.10",
+      "nodemon": "^3.1.10",
+      "pg": "^8.16.3",
+      "pg-hstore": "^2.3.4",
+      "sequelize": "^6.37.7",
+      "sequelize-auto": "^0.8.8",
+      "transporter": "^0.0.1"
+    }
+  }
