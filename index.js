@@ -22,7 +22,7 @@ console.log("NODE_ENV:", process.env.NODE_ENV);
 console.log("DATABASE_URL:", process.env.DATABASE_URL ? "YES" : "NO");
 
 // Khởi tạo models
-initModels(sequelize);
+
 
 const app = express();
 
@@ -83,6 +83,8 @@ const startServer = async () => {
     await sequelize.authenticate();
     console.log("DB connected");
 
+
+    
     // CHỈ SYNC TRONG DEV – CẤM TRONG PRODUCTION
     if (process.env.NODE_ENV !== 'production') {
       await sequelize.sync({ alter: true });
@@ -90,7 +92,7 @@ const startServer = async () => {
     } else {
       console.log("Production mode: Skipping sync – using migrations only");
     }
-
+initModels(sequelize);
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`http://localhost:${PORT}`);

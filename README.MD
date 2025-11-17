@@ -97,3 +97,96 @@ dotenv.config();
 ------------------Đẩy lại code mới lên github : git add .
                                                 git commit -m "change some texts"
                                                 git push origin master
+
+
+const filterUsersByStatus = async (req, res) => {
+  try {
+    const { status } = req.query;
+
+    // Nếu không truyền status -> trả về toàn bộ user
+    const validStatuses = ["unverified", "active", "disabled"];
+    let condition = {};
+
+    if (status) {
+      // Kiểm tra status có hợp lệ không
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          message: `Giá trị 'status' không hợp lệ. Các giá trị hợp lệ: ${validStatuses.join(", ")}`,
+        });
+      }
+      condition.status = { [Op.eq]: status };
+    }
+
+    // Truy vấn DB
+    const users = await model.users.findAll({
+      where: condition,
+      attributes: ["user_id", "full_name", "email", "role", "status", "created_at"], // tránh trả password
+      order: [["created_at", "DESC"]],
+    });
+
+    return res.status(200).json({
+      message: status
+        ? `Danh sách người dùng có status = '${status}'`
+        : "Danh sách toàn bộ người dùng",
+      count: users.length,
+      data: users,
+    });
+  } catch (error) {
+    console.error("Lỗi lọc người dùng:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+const getUserByKeyword = async (req, res) => {
+  try {
+    const { keyword = "", page = 1, limit = 10 } = req.query;
+
+    const pageNum = parseInt(page) || 1;
+    const pageSize = parseInt(limit) || 10;
+
+    const whereCondition = keyword
+      ? {
+          [Op.or]: [
+            { full_name: { [Op.iLike]: `%${keyword}%` } },
+            { email: { [Op.iLike]: `%${keyword}%` } },
+          ],
+        }
+      : {};
+
+    // B1: Lấy tổng số user
+    const count = await model.users.count({ where: whereCondition });
+
+    // B2: Tính tổng trang và chặn page vượt quá giới hạn
+    const totalPages = Math.ceil(count / pageSize);
+    const validPage = Math.min(pageNum, totalPages || 1);
+    const offset = (validPage - 1) * pageSize;
+
+    // B3: Lấy dữ liệu trang hợp lệ
+    const rows = await model.users.findAll({
+      where: whereCondition,
+      attributes: [
+        "user_id",
+        "full_name",
+        "email",
+        "role",
+        "status",
+        "created_at",
+      ],
+      order: [["created_at", "DESC"]],
+      offset,
+      limit: pageSize,
+    });
+
+    // B4: Trả kết quả ra
+    return res.status(200).json({
+      message: "Lấy danh sách người dùng thành công",
+      currentPage: validPage,
+      totalPages,
+      totalUsers: count,
+      data: rows,
+    });
+  } catch (error) {
+    console.error("Lỗi tìm kiếm người dùng:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
