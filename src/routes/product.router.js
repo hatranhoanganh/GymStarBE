@@ -14,8 +14,8 @@ import {
     unhideProduct,
     getProductByKeyWordAdmin,
     getProductByKeyWordUser,
-    AddThumbnailProduct,
-    AddImageVariant,
+    addThumbnailProduct,
+    addImageVariant,
 } from "../controllers/product.controller.js";
 
 const ProductRouter = express.Router();
@@ -33,8 +33,8 @@ ProductRouter.put("/HienSanPham/:id", unhideProduct);
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaAdmin", getProductByKeyWordAdmin);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-ProductRouter.post("/ThemAnhSanPham", upload.single("thumbnail"), AddThumbnailProduct);
-ProductRouter.post("/ThemAnhBienThe", upload.array("images"), AddImageVariant);
+ProductRouter.post("/ThemAnhSanPham", upload.single("thumbnail"), addThumbnailProduct);
+ProductRouter.post("/ThemAnhBienThe", upload.array("images"), addImageVariant);
 
 
 export default ProductRouter;

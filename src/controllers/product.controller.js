@@ -918,7 +918,7 @@ const getProductByKeyWordUser = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-const AddThumbnailProduct = async (req, res) => {
+const addThumbnailProduct = async (req, res) => {
   try {
     const { product_id } = req.body;
     if (!product_id) return res.status(400).json({ message: "product_id là bắt buộc" });
@@ -946,7 +946,7 @@ const AddThumbnailProduct = async (req, res) => {
   }
 };
 
-const AddImageVariant = async (req, res) => {
+const addImageVariant = async (req, res) => {
   try {
     const { variant_id } = req.body;
     if (!variant_id) return res.status(400).json({ message: "variant_id là bắt buộc" });
@@ -997,6 +997,6 @@ export {
   getActiveProducts,
   getProductByKeyWordAdmin,
   getProductByKeyWordUser,
-  AddThumbnailProduct,
-  AddImageVariant,
+  addThumbnailProduct,
+  addImageVariant,
 };
