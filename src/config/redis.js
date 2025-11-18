@@ -2,7 +2,11 @@
 import { createClient } from 'redis';
 
 const redis = createClient({
-  url: process.env.REDIS_URL || 'redis://localhost:6379'
+  socket: {
+    host: process.env.REDIS_HOST,  // host Redis Cloud
+    port: process.env.REDIS_PORT,  // port Redis Cloud
+  },
+  password: process.env.REDIS_PASSWORD, // password Default user
 });
 
 redis.on('error', (err) => {
