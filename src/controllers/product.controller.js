@@ -1214,7 +1214,7 @@ const getProductDetailAdmin = async (req, res) => {
   try {
     const { product_id } = req.params;
 
-    // Lấy thông tin sản phẩm
+    // Lấy thông tin sản phẩm + category name
     const product = await model.products.findByPk(product_id, {
       attributes: [
         "product_id",
@@ -1225,6 +1225,8 @@ const getProductDetailAdmin = async (req, res) => {
         "thumbnail",
         "spec",
         "category_id",
+        "createdAt",
+        "updatedAt"
       ],
       include: [
         {
@@ -1233,6 +1235,11 @@ const getProductDetailAdmin = async (req, res) => {
           attributes: ["product_image_id", "color", "image"],
           order: [["createdAt", "ASC"]],
         },
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["name"],   // <-- Lấy tên danh mục
+        },
       ],
     });
 
@@ -1240,7 +1247,7 @@ const getProductDetailAdmin = async (req, res) => {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-    // Gom ảnh theo màu theo format yêu cầu
+    // Gom ảnh theo màu
     const colors = [];
     const colorMap = {};
 
@@ -1256,7 +1263,7 @@ const getProductDetailAdmin = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: "Lấy thông tin ảnh sản phẩm theo màu thành công",
+      message: "Lấy thông tin sản phẩm thành công",
       data: {
         product_id: product.product_id,
         name: product.name,
@@ -1266,7 +1273,10 @@ const getProductDetailAdmin = async (req, res) => {
         thumbnail: product.thumbnail,
         spec: product.spec,
         category_id: product.category_id,
-        colors, // Trả về array dạng: [{ color: "red", images: [...] }]
+        category_name: product.category?.name || null, // <-- Thêm tên danh mục
+        createdAt: formatVNDateTime(product.createdAt),
+        updatedAt: formatVNDateTime(product.updatedAt),
+        colors,
       },
     });
   } catch (error) {
@@ -1276,6 +1286,7 @@ const getProductDetailAdmin = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+
 
 const getProductDetailUser = async (req, res) => {
   try {

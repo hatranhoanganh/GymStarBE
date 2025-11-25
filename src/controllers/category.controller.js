@@ -54,48 +54,50 @@ const createCategory = async (req, res) => {
   }
 };
 
-const getAllCategories = async (req, res) => {
-  try {
-    const rows = await model.categories.findAll({
-      attributes: ["category_id", "name", "parent_id"],
-      order: [["category_id", "ASC"]],
-      raw: true,
-    });
+  const getAllCategories = async (req, res) => {
+    try {
+      const rows = await model.categories.findAll({
+        attributes: ["category_id", "name", "parent_id", "createdAt", "updatedAt"],
+        order: [["category_id", "ASC"]],
+        raw: true,
+      });
 
-    // Tạo map để nhóm children
-    const map = {};
+      // Tạo map để nhóm children
+      const map = {};
 
-    rows.forEach(cat => {
-      map[cat.category_id] = {
-        category_id: cat.category_id,
-        name: cat.name,
-        children: [],
-      };
-    });
+      rows.forEach(cat => {
+        map[cat.category_id] = {
+          category_id: cat.category_id,
+          name: cat.name,
+          createdAt: formatVNDateTime(cat.createdAt),
+        updatedAt: formatVNDateTime(cat.updatedAt),
+          children: [],
+        };
+      });
 
-    const tree = [];
+      const tree = [];
 
-    rows.forEach(cat => {
-      if (cat.parent_id === null) {
-        // Danh mục gốc
-        tree.push(map[cat.category_id]);
-      } else {
-        // Push vào danh mục cha
-        if (map[cat.parent_id]) {
-          map[cat.parent_id].children.push(map[cat.category_id]);
+      rows.forEach(cat => {
+        if (cat.parent_id === null) {
+          // Danh mục gốc
+          tree.push(map[cat.category_id]);
+        } else {
+          // Push vào danh mục cha
+          if (map[cat.parent_id]) {
+            map[cat.parent_id].children.push(map[cat.category_id]);
+          }
         }
-      }
-    });
+      });
 
-    return res.status(200).json({
-      message: "Lấy danh mục dạng cây thành công",
-      data: tree,
-    });
-  } catch (error) {
-    console.error("Lỗi getAllCategories:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
-};
+      return res.status(200).json({
+        message: "Lấy danh mục dạng cây thành công",
+        data: tree,
+      });
+    } catch (error) {
+      console.error("Lỗi getAllCategories:", error);
+      return res.status(500).json({ message: "Lỗi server" });
+    }
+  };
 
 
 const updateCategory = async (req, res) => {
