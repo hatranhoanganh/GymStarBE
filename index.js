@@ -1,3 +1,4 @@
+// index.js
 import dotenv from "dotenv";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -11,18 +12,9 @@ import initModels from "./src/models/init-models.js";
 
 // === CHỈ LOAD .env.local KHI LOCAL ===
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
-
 if (process.env.NODE_ENV !== "production") {
-  const envPath = path.join(__dirname, ".env.local");
-  dotenv.config({ path: envPath });
-  console.log(`[DEV] Loaded: ${envPath}`);
+  dotenv.config({ path: path.join(__dirname, ".env.local")   });
 }
-
-console.log("NODE_ENV:", process.env.NODE_ENV);
-console.log("DATABASE_URL:", process.env.DATABASE_URL ? "YES" : "NO");
-
-// Khởi tạo models
-
 
 const app = express();
 
@@ -38,7 +30,6 @@ app.use(
       if (!origin || allowedOrigins.includes(origin)) {
         callback(null, true);
       } else {
-        console.warn(`CORS blocked: ${origin}`);
         callback(new Error("CORS not allowed"));
       }
     },
@@ -79,20 +70,14 @@ const PORT = process.env.SERVER_PORT || 10000;
 
 const startServer = async () => {
   try {
-    console.log("Connecting to DB...");
+    // Kết nối DB và sync DEV (tất cả lỗi sẽ được throw)
     await sequelize.authenticate();
-    console.log("DB connected");
-
-
-    
-    // CHỈ SYNC TRONG DEV – CẤM TRONG PRODUCTION
-    if (process.env.NODE_ENV !== 'production') {
+    if (process.env.NODE_ENV !== "production") {
       await sequelize.sync({ alter: true });
-      console.log("Tables synced (DEV only)");
-    } else {
-      console.log("Production mode: Skipping sync – using migrations only");
     }
-initModels(sequelize);
+
+    // Khởi động server (chỉ log server)
+    initModels(sequelize);
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`http://localhost:${PORT}`);

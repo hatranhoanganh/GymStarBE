@@ -51,6 +51,7 @@ export default class products extends Model {
         tableName: "products",
         schema: "public",
         timestamps: true,
+        underscored: true,
         indexes: [
           {
             name: "products_pkey",

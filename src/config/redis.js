@@ -1,44 +1,28 @@
-// src/config/redis.js
-import { createClient } from 'redis';
+import { createClient } from "redis";
 
-const redis = createClient({
-  socket: {
-    host: process.env.REDIS_HOST,  // host Redis Cloud
-    port: process.env.REDIS_PORT,  // port Redis Cloud
-  },
-  password: process.env.REDIS_PASSWORD, // password Default user
-});
+const isProduction = process.env.NODE_ENV === "production";
+const redisUrl = process.env.REDIS_URL;
 
-redis.on('error', (err) => {
-  console.error('Redis Client Error:', err);
-});
+const redisOptions = { url: redisUrl, socket: {} };
 
-// === ĐẢM BẢO CHỈ KẾT NỐI 1 LẦN ===
+if (isProduction) {
+  redisOptions.socket.tls = true;
+  redisOptions.socket.rejectUnauthorized = false;
+}
 let isConnected = false;
-let connectPromise = null;
 
-const connectRedis = async () => {
-  if (isConnected) return;
-  if (connectPromise) return connectPromise;
+const redis = createClient(redisOptions);
 
-  connectPromise = (async () => {
-    try {
-      await redis.connect();
-      isConnected = true;
-      console.log('Redis connected successfully');
-    } catch (err) {
-      isConnected = false;
-      connectPromise = null;
-      console.error('Redis connection failed:', err);
-      throw err;
-    }
-  })();
+async function connectRedis() {
+  if (!isConnected) {
+    await redis.connect();
+    isConnected = true;
+  }
+}
 
-  return connectPromise;
-};
 
-// === TỰ ĐỘNG KẾT NỐI KHI IMPORT ===
-connectRedis().catch(() => {});
+// **CHỈ EXPORT 2 THỨ**
+export { redis, connectRedis };
 
-export default redis;
-export { connectRedis };
+// Nếu muốn tự động connect khi import
+connectRedis().catch(console.error);

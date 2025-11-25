@@ -7,14 +7,14 @@ import {
   loginUser,
   refreshTokenRoute,
   getUserById,
-  disableUser,
-  enableUser,
-  getUserByKeyWordOrStatus,
   updateUser,
   changePassword,
   forgotPassword,
   verifyOTP,
-  resetPassword
+  resetPassword,
+  updateStatus,
+  getUserByKeyword,
+  getUsersByStatus
 } from "../controllers/user.controller.js";
 import { forgotPasswordLimiter } from "../middleware/rateLimit.js";
 
@@ -26,10 +26,10 @@ userRouter.get("/verify-email", verifyEmail);
 userRouter.post("/DangNhap", loginUser);
 userRouter.post("/refresh-token", refreshTokenRoute);
 userRouter.get("/LayThongTinNguoiDung/:id", getUserById);
-userRouter.put("/VoHieuHoaTaiKhoan/:id", disableUser);
-userRouter.put("/KichHoatLaiTaiKhoan/:id", enableUser);
+userRouter.put("/CapNhatTrangThai/:id", updateStatus);
 userRouter.put("/CapNhatThongTin/:id", updateUser);
-userRouter.get("/LayThongTinTaiKhoanTheoKeyWordHoacStatus",  getUserByKeyWordOrStatus);
+userRouter.get("/LayThongTinTaiKhoanTheoKeyWord",  getUserByKeyword);
+userRouter.get("/LayThongTinTaiKhoanTheoStatus",  getUsersByStatus);
 userRouter.put("/DoiMatKhau/:id", changePassword);
 userRouter.post("/QuenMatKhau", forgotPasswordLimiter, forgotPassword);
 userRouter.post("/verify-otp", verifyOTP);

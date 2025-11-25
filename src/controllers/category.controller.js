@@ -56,67 +56,47 @@ const createCategory = async (req, res) => {
 
 const getAllCategories = async (req, res) => {
   try {
-    const { page = 1, limit = 10 } = req.query;
-
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 10;
-
-    // Đếm tổng số danh mục
-    const count = await model.categories.count();
-
-    if (count === 0) {
-      return res.status(200).json({
-        message: "Không có dữ liệu danh mục.",
-        total: 0,
-        page: 1,
-        totalPages: 0,
-        data: [],
-      });
-    }
-
-    // Tính tổng số trang
-    const totalPages = Math.ceil(count / pageSize);
-
-    // Giữ cho page không vượt quá tổng trang
-    const validPage = Math.min(pageNum, totalPages);
-    const offset = (validPage - 1) * pageSize;
-
-    // Lấy dữ liệu phẳng (table)
     const rows = await model.categories.findAll({
-      attributes: [
-        "category_id",
-        "name",
-        "parent_id",
-        "createdAt",
-        "updatedAt",
-      ],
+      attributes: ["category_id", "name", "parent_id"],
       order: [["category_id", "ASC"]],
-      limit: pageSize,
-      offset,
       raw: true,
     });
 
-    // Format ngày + thêm tên danh mục cha
-    const data = rows.map((cat) => ({
-      ...cat,
-      parent_name:
-        rows.find((p) => p.category_id === cat.parent_id)?.name || null,
-      createdAt: formatVNDateTime(cat.createdAt),
-      updatedAt: formatVNDateTime(cat.updatedAt),
-    }));
+    // Tạo map để nhóm children
+    const map = {};
+
+    rows.forEach(cat => {
+      map[cat.category_id] = {
+        category_id: cat.category_id,
+        name: cat.name,
+        children: [],
+      };
+    });
+
+    const tree = [];
+
+    rows.forEach(cat => {
+      if (cat.parent_id === null) {
+        // Danh mục gốc
+        tree.push(map[cat.category_id]);
+      } else {
+        // Push vào danh mục cha
+        if (map[cat.parent_id]) {
+          map[cat.parent_id].children.push(map[cat.category_id]);
+        }
+      }
+    });
 
     return res.status(200).json({
-      message: "Lấy danh sách danh mục thành công",
-      total: count,
-      page: validPage,
-      totalPages,
-      data,
+      message: "Lấy danh mục dạng cây thành công",
+      data: tree,
     });
   } catch (error) {
-    console.error("Lỗi getAllCategoriesTable:", error);
+    console.error("Lỗi getAllCategories:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 const updateCategory = async (req, res) => {
   try {

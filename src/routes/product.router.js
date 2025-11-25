@@ -9,13 +9,16 @@ import {
   getProductVariants,
   updateProduct,
   updateProductVariant,
-  hideProduct,
   getActiveProducts,
-    unhideProduct,
     getProductByKeyWordAdmin,
     getProductByKeyWordUser,
     addThumbnailProduct,
-    addImageVariant,
+    addImageProductByColor,
+    getProductDetailAdmin,
+    getProductDetailUser,
+    updateProductStatus,
+    updateThumbnailProduct,
+    updateImagesProductByColor,
 } from "../controllers/product.controller.js";
 
 const ProductRouter = express.Router();
@@ -28,13 +31,20 @@ ProductRouter.get("/LayTatCaSanPhamAdmin", getAllProducts);
 ProductRouter.get("/LayBienTheSanPham/:id", getProductVariants);
 ProductRouter.put("/CapNhatSanPham/:id", updateProduct);
 ProductRouter.put("/CapNhatBienThe/:id", updateProductVariant);
-ProductRouter.put("/AnSanPham/:id", hideProduct);
-ProductRouter.put("/HienSanPham/:id", unhideProduct);
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaAdmin", getProductByKeyWordAdmin);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-ProductRouter.post("/ThemAnhSanPham", upload.single("thumbnail"), addThumbnailProduct);
-ProductRouter.post("/ThemAnhBienThe", upload.array("images"), addImageVariant);
+ProductRouter.post("/ThemAnhSanPham/:product_id", upload.single("thumbnail"), addThumbnailProduct);
+ProductRouter.post("/ThemAnhSanPhamTheoMau/:product_id", upload.array("images"), addImageProductByColor);
+ProductRouter.get("/ChiTietSanPhamAdmin/:product_id", getProductDetailAdmin);
+ProductRouter.get("/ChiTietSanPhamUser/:product_id", getProductDetailUser);
+ProductRouter.put("/CapNhatTrangThaiSanPham/:id", updateProductStatus);
+ProductRouter.put("/CapNhatAnhSanPham/:product_id",upload.single("thumbnail"), updateThumbnailProduct);
+ProductRouter.put("/CapNhatAnhTheoMau/:product_id", upload.array("images"), updateImagesProductByColor);
+
+
+
+
 
 
 export default ProductRouter;

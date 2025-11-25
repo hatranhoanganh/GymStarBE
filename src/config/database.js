@@ -6,15 +6,11 @@ import { fileURLToPath } from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-// === CHỈ LOAD .env.local KHI LOCAL (development) ===
 if (process.env.NODE_ENV !== "production") {
   const envPath = path.join(__dirname, "../../.env.local");
   dotenv.config({ path: envPath });
-  console.log(`[LOCAL] Loaded .env.local: ${envPath}`);
 }
 
-console.log("NODE_ENV:", process.env.NODE_ENV || "development");
-console.log("DATABASE_URL:", process.env.DATABASE_URL ? "YES" : "NO");
 
 // === ƯU TIÊN DATABASE_URL (Render) ===
 let sequelize;
@@ -33,7 +29,6 @@ if (process.env.DATABASE_URL) {
 } 
 // === LOCAL DB ===
 else {
-  console.log("Dùng DB local (development)");
   const required = ["DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST"];
   required.forEach(key => {
     if (!process.env[key]) {

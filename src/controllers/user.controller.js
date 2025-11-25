@@ -10,7 +10,8 @@
     sendOTPEmail,
   } from "../config/email.js";
   import { formatVNDateTime, formatVNDate } from "../utils/dateFormat.js";
-  import redis, { connectRedis } from "../config/redis.js";
+import { redis, connectRedis } from "../config/redis.js";
+
 
   dotenv.config();
   const model = initModels(sequelize);
@@ -69,7 +70,7 @@
         } else if (existingUser.status === "disabled") {
           return res.status(400).json({
             message:
-              "Tài khoản này đã bị vô hiệu hóa. Vui lòng liên hệ quản trị viên.",
+              "Tài khoản này đã bị vô hiệu hóa.",
           });
         }
       }
@@ -153,7 +154,7 @@
         `);
       }
 
-      // BƯỚC 3: ƯU TIÊN 1 – ĐÃ XÁC NHẬN RỒI
+      // BƯỚC 3: ƯU TIÊN 1 – ĐÃ XÁC NHẬN RỒI  
       if (user.status === "active") {
         return res.send(`
           <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#f0fff4;">
@@ -215,7 +216,7 @@
                 <p style="color:#718096;">
                   Vui lòng kiểm tra <strong>hộp thư đến</strong> và <strong>mục Spam/Junk</strong>.<br>
                   Link mới có hiệu lực trong <strong>15 phút</strong>.
-                </p>
+                </p>  
                 <p style="margin-top:24px; font-size:14px; color:#a0aec0;">
                   <em>Thời gian hiện tại: ${new Date().toLocaleString("vi-VN", {
                     timeZone: "Asia/Ho_Chi_Minh",
@@ -465,7 +466,7 @@
       }
       const formattedUser = {
         ...user.toJSON(),
-        birth_date: formatBirthDate(user.birth_date),
+        birth_date: formatVNDate(user.birth_date),
         createdAt: formatVNDateTime(user.createdAt),
         updatedAt: formatVNDateTime(user.updatedAt),
       };
@@ -480,170 +481,54 @@
       return res.status(500).json({ message: "Lỗi server" });
     }
   };
-  /** ============ ẨN NGƯỜI DÙNG (SOFT DELETE) ============ */
-  const disableUser = async (req, res) => {
-    try {
-      const { id } = req.params;
+ const updateStatus = async (req, res) => {
+  try {
+    const { id } = req.params;
 
-      const user = await model.users.findByPk(id);
-      if (!user) {
-        return res.status(404).json({ message: "Không tìm thấy người dùng" });
-      }
-
-      // Nếu tài khoản đã bị ẩn rồi
-      if (user.status === "disabled" || user.status === null) {
-        return res
-          .status(400)
-          .json({ message: "Tài khoản này đã bị vô hiệu hóa trước đó" });
-      }
-
-      await user.update({ status: "disabled" });
-
-      return res.status(200).json({
-        message: "Ẩn (vô hiệu hóa) người dùng thành công",
-        data: {
-          user_id: user.user_id,
-          full_name: user.full_name,
-          email: user.email,
-          status: user.status,
-        },
-      });
-    } catch (error) {
-      console.error("Lỗi disableUser:", error);
-      return res.status(500).json({ message: "Lỗi server" });
+    const user = await model.users.findByPk(id);
+    if (!user) {
+      return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
-  };
-  /** ============ KÍCH HOẠT LẠI NGƯỜI DÙNG (ENABLE) ============ */
-  const enableUser = async (req, res) => {
-    try {
-      const { id } = req.params;
 
-      const user = await model.users.findByPk(id);
-      if (!user) {
-        return res.status(404).json({ message: "Không tìm thấy người dùng" });
-      }
-
-      // Nếu tài khoản chưa xác nhận email → không cho bật
-      if (user.status === "unverified") {
-        return res.status(400).json({
-          message: "Không thể kích hoạt tài khoản chưa xác nhận email",
-        });
-      }
-
-      // Nếu đã active rồi → không cần bật lại
-      if (user.status === "active") {
-        return res.status(400).json({ message: "Tài khoản đã đang hoạt động" });
-      }
-
-      await user.update({ status: "active" });
-
-      return res.status(200).json({
-        message: "Kích hoạt lại tài khoản thành công",
-        data: {
-          user_id: user.user_id,
-          full_name: user.full_name,
-          email: user.email,
-          status: user.status,
-        },
-      });
-    } catch (error) {
-      console.error("Lỗi enableUser:", error);
-      return res.status(500).json({ message: "Lỗi server" });
-    }
-  };
-
-  const getUserByKeyWordOrStatus = async (req, res) => {
-    try {
-      const { status, keyword = "", page = 1, limit = 10 } = req.query;
-
-      const pageNum = parseInt(page, 10) || 1;
-      const pageSize = parseInt(limit, 10) || 10;
-
-      // 1. Tạo điều kiện where
-      const whereCondition = {};
-
-      if (status) {
-        whereCondition.status = status;
-      }
-
-      if (keyword) {
-        whereCondition[Op.or] = [
-          { full_name: { [Op.iLike]: `%${keyword}%` } },
-          { email: { [Op.iLike]: `%${keyword}%` } },
-        ];
-      }
-
-      // 2. Đếm tổng
-      const count = await model.users.count({ where: whereCondition });
-
-      if (count === 0) {
-        return res.status(200).json({
-          message: "Không tìm thấy người dùng.",
-          total: 0,
-          page: 1,
-          totalPages: 0,
-          data: [],
-        });
-      }
-
-      // 3. Phân trang
-      const totalPages = Math.ceil(count / pageSize);
-      const validPage = Math.min(pageNum, totalPages);
-      const offset = (validPage - 1) * pageSize;
-
-      // 4. Lấy dữ liệu
-      const rows = await model.users.findAll({
-        where: whereCondition,
-        attributes: [
-          "user_id",
-          "full_name",
-          "email",
-          "gender",
-          "birth_date",
-          "status",
-          "role",
-          "createdAt",
-          "updatedAt",
-        ],
-        offset,
-        limit: pageSize,
-      });
-
-      if (rows.length === 0) {
-        return res.status(200).json({
-          message: "Không có dữ liệu ở trang này.",
-          total: count,
-          page: validPage,
-          totalPages,
-          data: [],
-        });
-      }
-
-      // 5. FORMAT TẤT CẢ USER TRONG DANH SÁCH
-      const formattedData = rows.map((user) => ({
-        ...user.toJSON(),
-        birth_date: formatVNDate(user.birth_date),
-        createdAt: formatVNDateTime(user.createdAt),
-        updatedAt: formatVNDateTime(user.updatedAt),
-      }));
-
-      // 6. Trả kết quả
-      return res.status(200).json({
-        message: "Lấy danh sách người dùng thành công",
-        currentPage: validPage,
-        totalPages,
-        totalUsers: count,
-        data: formattedData, // Chỉ 1 key `data`
-      });
-    } catch (error) {
-      console.error("Lỗi khi lấy danh sách người dùng:", error);
-      return res.status(500).json({
-        message: "Lỗi server",
+    // Không cho đổi trạng thái nếu chưa xác nhận email
+    if (user.status === "unverified") {
+      return res.status(400).json({
+        message: "Không thể thay đổi trạng thái tài khoản chưa xác nhận email",
       });
     }
-  };
 
-  const updateUser = async (req, res) => {
+    let newStatus;
+    if (user.status === "active") {
+      newStatus = "disabled"; // đang active → vô hiệu hóa
+    } else if (user.status === "disabled" || user.status === null) {
+      newStatus = "active"; // đang disabled → bật lại
+    } else {
+      return res.status(400).json({
+        message: `Không thể thay đổi trạng thái tài khoản với trạng thái hiện tại: ${user.status}`,
+      });
+    }
+
+    await user.update({ status: newStatus });
+
+    return res.status(200).json({
+      message: `Thay đổi trạng thái thành công. Trạng thái mới: ${newStatus}`,
+      data: {
+        user_id: user.user_id,
+        full_name: user.full_name,
+        email: user.email,
+        status: user.status,
+      },
+    });
+  } catch (error) {
+    console.error("Lỗi toggleUserStatus:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+
+
+
+  const  updateUser = async (req, res) => {
     try {
       const { id } = req.params;
       const { full_name, gender, birth_date } = req.body;
@@ -668,7 +553,7 @@
 
       // Xử lý gender
       if (gender !== undefined) {
-        if (!["male", "female", "other", null].includes(gender)) {
+        if (!["nữ", "nam", null].includes(gender)) {
           return res.status(400).json({ message: "Giới tính không hợp lệ" });
         }
         updateData.gender = gender;
@@ -853,11 +738,11 @@
       // Chống spam: 2 phút/lần
       const cooldownSet = await redis.set(cooldownKey, "1", {
         NX: true,
-        EX: 120,
+        EX: 30,
       });
       if (!cooldownSet) {
         let ttl = await redis.ttl(cooldownKey);
-        if (ttl < 0) ttl = 120;
+        if (ttl < 0) ttl = 30;
         return res.status(429).json({
           message: `Vui lòng đợi ${ttl} giây trước khi yêu cầu OTP mới.`,
         });
@@ -1008,6 +893,143 @@
       return res.status(500).json({ message: "Lỗi server" });
     }
   };
+// Lấy danh sách người dùng theo status
+const getUsersByStatus = async (req, res) => {
+  try {
+    const { status } = req.query;
+    const validStatuses = ["unverified", "active", "disabled"];
+    let condition = {};
+
+    if (status) {
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          message: `Giá trị 'status' không hợp lệ. Các giá trị hợp lệ: ${validStatuses.join(", ")}`,
+        });
+      }
+      condition.status = { [Op.eq]: status };
+    }
+
+    const users = await model.users.findAll({
+      where: condition,
+      attributes: [
+        "user_id",
+        "full_name",
+        "email",
+        "role",
+        "status",
+        "birth_date",
+        "createdAt",
+        "updatedAt",
+      ],
+      order: [["createdAt", "DESC"]],
+    });
+
+    if (users.length === 0) {
+      return res.status(200).json({
+        message: "Không có tài khoản nào.",
+        count: 0,
+        data: [],
+      });
+    }
+
+    const formattedData = users.map((user) => ({
+      ...user.toJSON(),
+      birth_date: formatVNDate(user.birth_date),
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    }));
+
+    return res.status(200).json({
+      message: status
+        ? `Danh sách người dùng có status = '${status}'`
+        : "Danh sách toàn bộ người dùng",
+      count: users.length,
+      data: formattedData,
+    });
+  } catch (error) {
+    console.error("Lỗi lọc người dùng:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+// Lấy danh sách người dùng theo keyword (với phân trang)
+const getUserByKeyword = async (req, res) => {
+  try {
+    const { keyword = "", page = 1, limit = 10 } = req.query;
+    const pageNum = parseInt(page) || 1;
+    const pageSize = parseInt(limit) || 10;
+
+    const whereCondition = keyword
+      ? {
+          [Op.or]: [
+            { full_name: { [Op.iLike]: `%${keyword}%` } },
+            { email: { [Op.iLike]: `%${keyword}%` } },
+          ],
+        }
+      : {};
+
+    const count = await model.users.count({ where: whereCondition });
+    const totalPages = Math.ceil(count / pageSize);
+
+    if (count === 0) {
+      return res.status(200).json({
+        message: "Không có tài khoản nào.",
+        totalUsers: 0,
+        currentPage: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const validPage = Math.min(pageNum, totalPages || 1);
+    const offset = (validPage - 1) * pageSize;
+
+    const rows = await model.users.findAll({
+      where: whereCondition,
+      attributes: [
+        "user_id",
+        "full_name",
+        "email",
+        "role",
+        "status",
+        "birth_date",
+        "createdAt",
+        "updatedAt",
+      ],
+      order: [["createdAt", "DESC"]],
+      offset,
+      limit: pageSize,
+    });
+
+    if (rows.length === 0) {
+      return res.status(200).json({
+        message: "Không có tài khoản nào ở trang này.",
+        totalUsers: count,
+        currentPage: validPage,
+        totalPages,
+        data: [],
+      });
+    }
+
+    const formattedData = rows.map((user) => ({
+      ...user.toJSON(),
+      birth_date: formatVNDate(user.birth_date),
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    }));
+
+    return res.status(200).json({
+      message: "Lấy danh sách người dùng thành công",
+      totalUsers: count,
+      currentPage: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (error) {
+    console.error("Lỗi tìm kiếm người dùng:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 
   export {
     registerUser,
@@ -1016,12 +1038,12 @@
     refreshTokenRoute,
     getAllUsers,
     getUserById,
-    disableUser,
-    enableUser,
-    getUserByKeyWordOrStatus,
+    updateStatus,
     updateUser,
     changePassword,
     forgotPassword,
     verifyOTP,
     resetPassword,
+    getUsersByStatus,
+    getUserByKeyword,
   };
