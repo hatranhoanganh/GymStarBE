@@ -712,9 +712,9 @@ import { redis, connectRedis } from "../config/redis.js";
     }
   };
   /** 1. GỬI OTP QUA EMAIL */
-  const forgotPassword = async (req, res) => {
+const forgotPassword = async (req, res) => {
     try {
-      await connectRedis();
+     
       const { email } = req.body;
       const trimmedEmail = email?.trim().toLowerCase();
 

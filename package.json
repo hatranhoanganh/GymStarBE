@@ -4,8 +4,8 @@
     "type": "module",
     "main": "index.js",
     "scripts": {
-       "start": "cross-env NODE_ENV=production node index.js",
-  "start:dev": "cross-env NODE_ENV=development nodemon index.js"
+        "start": "cross-env NODE_ENV=production node index.js",
+        "start:dev": "cross-env NODE_ENV=development nodemon index.js"
     },
     "repository": {
         "type": "git",
@@ -21,6 +21,7 @@
     "dependencies": {
         "@sendgrid/mail": "^8.1.6",
         "bcryptjs": "^3.0.3",
+        "bullmq": "^5.64.1",
         "cloudinary": "^2.8.0",
         "cookie-parser": "^1.4.7",
         "cors": "^2.8.5",

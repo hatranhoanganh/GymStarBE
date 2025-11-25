@@ -79,10 +79,10 @@ export const sendVerificationEmail = async (email, token) => {
 
               </table>
             </td>
-          </tr>
-        </table>
-      </div>
-    `,
+          </tr> 
+        </table>  
+      </div>  
+    `,  
   });
   console.log("Email xác nhận đã gửi:", email);
 };

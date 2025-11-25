@@ -9,6 +9,8 @@ import cors from "cors";
 import sequelize from "./src/config/database.js";
 import rootRoutes from "./src/routes/root.router.js";
 import initModels from "./src/models/init-models.js";
+import { connectRedis } from "./src/config/redis.js";
+connectRedis(); 
 
 // === CHỈ LOAD .env.local KHI LOCAL ===
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
