@@ -1,25 +1,21 @@
-// src/config/redis.js
 import { createClient } from "redis";
 
-let redisUrl = process.env.REDIS_URL;
+const redisUrl = process.env.REDIS_URL;
 
-// Nếu không có REDIS_URL → fallback về local Redis
-if (!redisUrl) {
-  console.warn("⚠️ REDIS_URL không có → dùng Redis local: redis://localhost:6379");
-  redisUrl = "redis://localhost:6379";
-}
+// Nếu URL bắt đầu bằng rediss:// → TLS
+const useTls = redisUrl.startsWith("rediss://");
 
-// Nếu dùng local → KHÔNG dùng TLS
-const isLocal = redisUrl.startsWith("redis://");
+console.log("🔌 Redis URL:", redisUrl);
+console.log("🔐 TLS enabled:", useTls);
 
 const redis = createClient({
   url: redisUrl,
-  socket: {
-    tls: !isLocal,               // Local: tắt TLS, Cloud: bật TLS
-    rejectUnauthorized: false,
-    connectTimeout: 5000,
-    reconnectStrategy: false,
-  },
+  socket: useTls
+    ? {
+        tls: true,
+        rejectUnauthorized: false,
+      }
+    : {},
 });
 
 redis.on("error", (err) => {
@@ -29,18 +25,10 @@ redis.on("error", (err) => {
 let isConnected = false;
 
 export async function connectRedis() {
-  if (isConnected) return;
-
-  console.log(`🔌 Connecting to Redis (${isLocal ? "Local" : "Cloud"})...`);
-
-  await redis.connect();
-  isConnected = true;
-
-  console.log("✅ Redis connected!");
-
-  // Giữ sống connection nếu cloud
-  if (!isLocal) {
-    setInterval(() => redis.ping(), 30000);
+  if (!isConnected) {
+    await redis.connect();
+    isConnected = true;
+    console.log("✅ Redis connected");
   }
 }
 
