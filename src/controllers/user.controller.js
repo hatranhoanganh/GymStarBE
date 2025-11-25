@@ -717,10 +717,12 @@ const forgotPassword = async (req, res) => {
     const { email } = req.body;
     const trimmedEmail = email?.trim().toLowerCase();
 
+    // Kiểm tra email hợp lệ
     if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
       return res.status(400).json({ message: "Email không hợp lệ" });
     }
 
+    // Kiểm tra user tồn tại
     const user = await model.users.findOne({
       where: { email: { [Op.iLike]: trimmedEmail }, status: "active" },
     });
@@ -733,18 +735,18 @@ const forgotPassword = async (req, res) => {
     const cooldownKey = `otp:cooldown:${trimmedEmail}`;
     const limitKey = `otp:limit:${trimmedEmail}`;
     const otpKey = `otp:${trimmedEmail}`;
-
     const cooldownSeconds = 30;
-    const otpExpireSeconds = 15 * 60;
-    const limitPerHour = 3;
 
-    // ❌ Cooldown: 30s
+    // ===============================
+    // 1️⃣ Chống spam: 30 giây/lần
+    // ===============================
     const cooldownSet = await redis.set(cooldownKey, "1", {
       NX: true,
       EX: cooldownSeconds,
     });
 
     if (!cooldownSet) {
+      // Redis Cloud có thể trả TTL -1 hoặc -2, fallback về cooldownSeconds
       let ttl = await redis.ttl(cooldownKey);
       if (ttl < 0) ttl = cooldownSeconds;
       return res.status(429).json({
@@ -752,26 +754,30 @@ const forgotPassword = async (req, res) => {
       });
     }
 
-    // 🔢 Giới hạn 3 lần/giờ
+    // ===============================
+    // 2️⃣ Giới hạn số lần gửi OTP: 3 lần/giờ
+    // ===============================
     let sendCount = await redis.incr(limitKey);
-    if (sendCount === 1) await redis.expire(limitKey, 60 * 60); // set 1h nếu lần đầu
-    if (sendCount > limitPerHour) {
-      // lock cooldown 1h
-      await redis.set(cooldownKey, "1", "EX", 60 * 60);
+    if (sendCount === 1) await redis.expire(limitKey, 60 * 60); // set TTL 1 giờ
+    if (sendCount > 3) {
+      await redis.set(cooldownKey, "1", { EX: 60 * 60 }); // chặn thêm 1 giờ
       return res.status(429).json({
-        message: `Quá nhiều yêu cầu! Vui lòng thử lại sau 59 phút.`,
+        message: "Quá nhiều yêu cầu! Vui lòng thử lại sau 59 phút.",
       });
     }
 
-    // 🔑 Tạo OTP và lưu Redis
+    // ===============================
+    // 3️⃣ Tạo và lưu OTP
+    // ===============================
     const otp = Math.floor(100000 + Math.random() * 900000).toString();
-    await redis.set(otpKey, otp, { EX: otpExpireSeconds });
 
-    // 📧 Gửi email OTP
+    // Xóa OTP cũ nếu có (đảm bảo client nhận OTP mới)
+    await redis.del(otpKey);
+    await redis.set(otpKey, otp, { EX: 15 * 60 }); // hiệu lực 15 phút
+
     await sendOTPEmail(trimmedEmail, otp);
 
     console.log(`✅ OTP sent | Email: ${trimmedEmail} | Lần: ${sendCount}`);
-
     return res.status(200).json({
       message:
         "Mã OTP đã được gửi (hiệu lực 15 phút). Kiểm tra email (Spam/Junk).",
