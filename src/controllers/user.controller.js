@@ -713,69 +713,77 @@ import { redis, connectRedis } from "../config/redis.js";
   };
   /** 1. GỬI OTP QUA EMAIL */
 const forgotPassword = async (req, res) => {
-    try {
-     
-      const { email } = req.body;
-      const trimmedEmail = email?.trim().toLowerCase();
+  try {
+    const { email } = req.body;
+    const trimmedEmail = email?.trim().toLowerCase();
 
-      if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
-        return res.status(400).json({ message: "Email không hợp lệ" });
-      }
-
-      const user = await model.users.findOne({
-        where: { email: { [Op.iLike]: trimmedEmail }, status: "active" },
-      });
-      if (!user) {
-        return res
-          .status(404)
-          .json({ message: "Không tìm thấy tài khoản hợp lệ" });
-      }
-
-      const cooldownKey = `otp:cooldown:${trimmedEmail}`;
-      const limitKey = `otp:limit:${trimmedEmail}`;
-      const otpKey = `otp:${trimmedEmail}`;
-
-      // Chống spam: 2 phút/lần
-      const cooldownSet = await redis.set(cooldownKey, "1", {
-        NX: true,
-        EX: 30,
-      });
-      if (!cooldownSet) {
-        let ttl = await redis.ttl(cooldownKey);
-        if (ttl < 0) ttl = 30;
-        return res.status(429).json({
-          message: `Vui lòng đợi ${ttl} giây trước khi yêu cầu OTP mới.`,
-        });
-      }
-
-      // Giới hạn 3 lần/giờ
-      let sendCount = await redis.incr(limitKey);
-      if (sendCount === 1) await redis.expire(limitKey, 60 * 60);
-      if (sendCount > 3) {
-        await redis.set(cooldownKey, "1", "EX", 60 * 60);
-        return res.status(429).json({
-          message: "Quá nhiều yêu cầu! Vui lòng thử lại sau 59 phút.",
-        });
-      }
-
-      // Tạo và lưu OTP
-      const otp = Math.floor(100000 + Math.random() * 900000).toString();
-      await redis.set(otpKey, otp, "EX", 15 * 60);
-      await sendOTPEmail(trimmedEmail, otp);
-
-      console.log(`✅ OTP sent | Email: ${trimmedEmail} | Lần: ${sendCount}`);
-      return res.status(200).json({
-        message:
-          "Mã OTP đã được gửi (hiệu lực 15 phút). Kiểm tra email (Spam/Junk).",
-        data: { email: trimmedEmail },
-      });
-    } catch (error) {
-      console.error("Lỗi forgotPassword:", error);
-      return res
-        .status(500)
-        .json({ message: "Lỗi server, vui lòng thử lại sau" });
+    if (!trimmedEmail || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmedEmail)) {
+      return res.status(400).json({ message: "Email không hợp lệ" });
     }
-  };
+
+    const user = await model.users.findOne({
+      where: { email: { [Op.iLike]: trimmedEmail }, status: "active" },
+    });
+    if (!user) {
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy tài khoản hợp lệ" });
+    }
+
+    const cooldownKey = `otp:cooldown:${trimmedEmail}`;
+    const limitKey = `otp:limit:${trimmedEmail}`;
+    const otpKey = `otp:${trimmedEmail}`;
+
+    const cooldownSeconds = 30;
+    const otpExpireSeconds = 15 * 60;
+    const limitPerHour = 3;
+
+    // ❌ Cooldown: 30s
+    const cooldownSet = await redis.set(cooldownKey, "1", {
+      NX: true,
+      EX: cooldownSeconds,
+    });
+
+    if (!cooldownSet) {
+      let ttl = await redis.ttl(cooldownKey);
+      if (ttl < 0) ttl = cooldownSeconds;
+      return res.status(429).json({
+        message: `Vui lòng đợi ${ttl} giây trước khi yêu cầu OTP mới.`,
+      });
+    }
+
+    // 🔢 Giới hạn 3 lần/giờ
+    let sendCount = await redis.incr(limitKey);
+    if (sendCount === 1) await redis.expire(limitKey, 60 * 60); // set 1h nếu lần đầu
+    if (sendCount > limitPerHour) {
+      // lock cooldown 1h
+      await redis.set(cooldownKey, "1", "EX", 60 * 60);
+      return res.status(429).json({
+        message: `Quá nhiều yêu cầu! Vui lòng thử lại sau 59 phút.`,
+      });
+    }
+
+    // 🔑 Tạo OTP và lưu Redis
+    const otp = Math.floor(100000 + Math.random() * 900000).toString();
+    await redis.set(otpKey, otp, { EX: otpExpireSeconds });
+
+    // 📧 Gửi email OTP
+    await sendOTPEmail(trimmedEmail, otp);
+
+    console.log(`✅ OTP sent | Email: ${trimmedEmail} | Lần: ${sendCount}`);
+
+    return res.status(200).json({
+      message:
+        "Mã OTP đã được gửi (hiệu lực 15 phút). Kiểm tra email (Spam/Junk).",
+      data: { email: trimmedEmail },
+    });
+  } catch (error) {
+    console.error("Lỗi forgotPassword:", error);
+    return res
+      .status(500)
+      .json({ message: "Lỗi server, vui lòng thử lại sau" });
+  }
+};
 
   /** 2. XÁC MINH OTP */
   const verifyOTP = async (req, res) => {
