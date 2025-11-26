@@ -21,7 +21,6 @@ const addProduct = async (req, res) => {
       color,
       price,
       status = "active",
-      has_size = true,
       product_variants,
     } = req.body;
 
@@ -67,9 +66,7 @@ const addProduct = async (req, res) => {
     }
 
     for (const v of product_variants) {
-      if (has_size && !v.size) {
-        return res.status(400).json({ message: "Variant phải có size" });
-      }
+      // size giờ là tùy chọn
       if (!v.stock && v.stock !== 0) {
         return res.status(400).json({ message: "Variant phải có stock" });
       }
@@ -98,7 +95,6 @@ const addProduct = async (req, res) => {
       color,
       price,
       status,
-      has_size,
     });
 
     // ===== Tạo product_variants =====
@@ -106,7 +102,7 @@ const addProduct = async (req, res) => {
       await model.product_variants.create({
         product_id: newProduct.product_id,
         color,
-        size: has_size ? v.size : null,
+        size: v.size || null, // size tùy chọn
         stock: v.stock,
         sku: v.sku,
         price,
@@ -153,6 +149,7 @@ const addProduct = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+
 
 const addProductVariant = async (req, res) => {
   try {
@@ -316,6 +313,23 @@ const addSizeToVariant = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+const getAllChildCategoryIds = (categories, parentId) => {
+  let result = [];
+
+  const directChildren = categories.filter((c) => c.parent_id === parentId);
+
+  directChildren.forEach((child) => {
+    result.push(child.category_id);
+
+    // tiếp tục lấy cấp sâu hơn
+    result = result.concat(
+      getAllChildCategoryIds(categories, child.category_id)
+    );
+  });
+
+  return result;
+};
+
 const getProductByDanhMucCap1 = async (req, res) => {
   try {
     const root_id = parseInt(req.query.root_id);
@@ -326,34 +340,29 @@ const getProductByDanhMucCap1 = async (req, res) => {
       return res.status(400).json({ message: "root_id là bắt buộc" });
     }
 
-    // 1. Kiểm tra danh mục root_id có tồn tại không
+    // 1. Kiểm tra danh mục cấp 1
     const rootCategory = await model.categories.findByPk(root_id);
-    if (!rootCategory) {
+    if (!rootCategory)
       return res.status(404).json({ message: "Danh mục cấp 1 không tồn tại" });
-    }
 
-    // 2. Kiểm tra đây là danh mục cấp 1
-    if (rootCategory.parent_id !== null) {
+    if (rootCategory.parent_id !== null)
       return res
         .status(400)
         .json({ message: "root_id không phải danh mục cấp 1" });
-    }
 
-    // 3. Lấy tất cả category con của danh mục cấp 1
-    const childCategories = await model.categories.findAll({
-      where: { parent_id: root_id },
-      attributes: ["category_id"],
+    // 2. Lấy toàn bộ categories
+    const allCategories = await model.categories.findAll({
+      attributes: ["category_id", "parent_id"],
       raw: true,
     });
 
-    const childIds = childCategories.map((c) => c.category_id);
-    if (childIds.length === 0) {
-      return res
-        .status(200)
-        .json({ message: "Danh mục cấp 1 chưa có sản phẩm", data: [] });
-    }
+    // 3. Lấy toàn bộ ID danh mục con mọi cấp
+    const childIds = getAllChildCategoryIds(allCategories, root_id);
 
-    // 4. Tổng số bản ghi
+    // Nếu chính danh mục cấp 1 có sản phẩm → thêm root_id vào luôn
+    childIds.push(root_id);
+
+    // 4. Đếm tổng sản phẩm
     const total = await model.products.count({
       where: { category_id: { [Op.in]: childIds } },
     });
@@ -362,9 +371,10 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const validPage = Math.min(page, totalPages || 1);
     const offset = (validPage - 1) * limit;
 
-    // 5. Lấy sản phẩm + tổng stock
+    // 5. Lấy danh sách sản phẩm
     const products = await model.products.findAll({
       where: { category_id: { [Op.in]: childIds } },
+
       attributes: [
         "product_id",
         "name",
@@ -380,6 +390,7 @@ const getProductByDanhMucCap1 = async (req, res) => {
           "total_stock",
         ],
       ],
+
       limit,
       offset,
       order: [["name", "ASC"]],
@@ -387,9 +398,15 @@ const getProductByDanhMucCap1 = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: "Lấy danh sách sản phẩm theo danh mục cấp 1 thành công",
+      message: "Lấy sản phẩm từ danh mục cấp 1 thành công",
       data: products,
-      pagination: { total, page: validPage, limit, totalPages },
+      pagination: {
+        total,
+        page: validPage,
+        limit,
+        totalPages,
+      },
+     
     });
   } catch (err) {
     console.error("Lỗi getProductByDanhMucCap1:", err);
@@ -429,6 +446,7 @@ const getAllProducts = async (req, res) => {
         "name",
         "description",
         "discount",
+          "spec", 
         "thumbnail",
         "status",
         "category_id",
@@ -500,6 +518,7 @@ const getAllProducts = async (req, res) => {
         name: p.name,
         description: p.description,
         discount: p.discount,
+         spec: p.spec || null,
         thumbnail: p.thumbnail,
         status: p.status,
 

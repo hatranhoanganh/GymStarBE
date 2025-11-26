@@ -23,6 +23,7 @@ const app = express();
 // CORS: Chỉ cho phép frontend
 const allowedOrigins = [
   "http://localhost:5173",
+  "http://localhost:5174",
   "https://gymstar.netlify.app",
 ];
 
