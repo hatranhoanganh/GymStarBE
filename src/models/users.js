@@ -45,12 +45,11 @@ export default class users extends Model {
         defaultValue: "unverified",
         field: 'status'
       },
-      role: {
-        type: DataTypes.STRING(20),
-        allowNull: true,
-        defaultValue: "customer",
-        field: 'role'
-      }
+      role_id: {
+  type: DataTypes.INTEGER,
+  allowNull: true,          // hoặc false nếu bạn bắt buộc user phải có role
+  field: 'role_id'
+},
     }, {
       sequelize,
       tableName: 'users',
@@ -70,7 +69,7 @@ export default class users extends Model {
         }
       ]
     });
-  }
+  } 
 
  
   

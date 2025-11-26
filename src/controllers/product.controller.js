@@ -1415,74 +1415,74 @@ const updateProductStatus = async (req, res) => {
 const updateThumbnailProduct = async (req, res) => {
   try {
     const { product_id } = req.params;
-
-    if (!product_id) {
-      return res.status(400).json({ message: "product_id là bắt buộc" });
-    }
-
-    if (!req.file) {
-      return res.status(400).json({ message: "Vui lòng upload 1 ảnh" });
-    }
-
+    if (!product_id) return res.status(400).json({ message: "product_id là bắt buộc" });
+    if (!req.file) return res.status(400).json({ message: "Vui lòng upload 1 ảnh" });
 
     // Tìm sản phẩm
     const product = await model.products.findByPk(product_id, {
-      include: [
-        { model: model.categories, as: "category", attributes: ["name"] },
-      ],
+      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
     });
-
-    if (!product)
-      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+    if (!product) return res.status(404).json({ message: "Sản phẩm không tồn tại" });
 
     // Xóa thumbnail cũ trên Cloudinary nếu có
     if (product.thumbnail) {
       try {
         const publicId = product.thumbnail.split("/").pop().split(".")[0];
-        await cloudinary.uploader.destroy(`products/${publicId}`);
+        await cloudinary.uploader.destroy(`products/${product_id}/thumbnail/${publicId}`);
       } catch (err) {
         console.warn("Không xóa được thumbnail cũ:", err.message);
       }
     }
 
-    // Upload thumbnail mới
+    // Upload thumbnail mới lên Cloudinary
     const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: 'products/{product_id}/thumbnail',
+      folder: `products/${product_id}/thumbnail`, // <-- backtick để interpolate product_id
       resource_type: "image",
     });
 
-    await fs.unlink(req.file.path);
+    // Xóa file tạm
+    try {
+      await fs.unlink(req.file.path);
+    } catch (err) {
+      console.warn("Không xóa được file tạm:", err.message);
+    }
 
     // Cập nhật DB
     product.thumbnail = result.secure_url;
     await product.save();
 
-    // Format dữ liệu trả về
-    const data = {
-      product_id: product.product_id,
-      category_id: product.category_id,
-      category_name: product.category?.name || null,
-      name: product.name,
-      description: product.description,
-      discount: product.discount,
-      status: product.status,
-      thumbnail: product.thumbnail,
-      spec: product.spec,
-      createdAt: formatVNDateTime(product.createdAt),
-      updatedAt: formatVNDateTime(product.updatedAt),
+    // Lấy lại product + category
+    const fullProduct = await model.products.findOne({
+      where: { product_id },
+      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+    });
+
+    const p = fullProduct.get({ plain: true });
+
+    const responseData = {
+      product_id: p.product_id,
+      name: p.name,
+      description: p.description,
+      discount: p.discount,
+      status: p.status,
+      thumbnail: p.thumbnail,
+      spec: p.spec,
+      createdAt: formatVNDateTime(p.createdAt),
+      updatedAt: formatVNDateTime(p.updatedAt),
+      category_id: p.category_id,
+      category_name: p.category?.name || null,
     };
 
     return res.status(200).json({
       message: "Cập nhật thumbnail sản phẩm thành công",
-      data,
+      data: responseData,
     });
   } catch (error) {
     console.error("Lỗi cập nhật thumbnail:", error);
-    return res
-      .status(500)
-      .json({ message: "Lỗi server", error: error.message });
+    return res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
+
 const updateImagesProductByColor = async (req, res) => {
   try {
     const { color } = req.body;

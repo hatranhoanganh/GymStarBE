@@ -38,6 +38,7 @@ npx sequelize-auto -h sql207.byethost24.com -d b24_37795256_khoa_hoc -u b24_3779
 {(dùng cho postgreSQL)
 npx sequelize-auto -h localhost -d gymstar -u postgres -x 123456 -p 5433 --dialect postgres -o src/models -l esm (link với db)
 }
+npx sequelize-auto -h ldpg-d48m0am3jp1c73clciv0-a.oregon-postgres.render.com -d gymstardatabase -u postgres -x dASG9BzdHZoMGluFUod6PtQh4LdaJOAl -p 5432 --dialect postgres --dialectOptions '{"ssl":{"rejectUnauthorized":false}}' -o src/models -l esm roles
 
 
 (link với data base có:

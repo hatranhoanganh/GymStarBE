@@ -17,8 +17,11 @@ import _review_reply from "./review_reply.js";
 import _reviews from "./reviews.js";
 import _user_addresses from "./user_addresses.js";
 import _users from "./users.js";
+import _roles from "./roles.js";
+
 
 export default function initModels(sequelize) {
+ 
   const carts = _carts.init(sequelize, DataTypes);
   const categories = _categories.init(sequelize, DataTypes);
   const feedback_reply = _feedback_reply.init(sequelize, DataTypes);
@@ -35,27 +38,16 @@ export default function initModels(sequelize) {
   const reviews = _reviews.init(sequelize, DataTypes);
   const user_addresses = _user_addresses.init(sequelize, DataTypes);
   const users = _users.init(sequelize, DataTypes);
+  const roles = _roles.init(sequelize, DataTypes);
 
-  // ==========================
-  // ✅ CATEGORY SELF-REFERENCE
-  // ==========================
+
+ 
   categories.belongsTo(categories, { as: "parent", foreignKey: "parent_id" });
-
-  // ❌ lỗi cũ:
-  // categories.hasMany(categories, { as: "categories", foreignKey: "parent_id" });
-
-  // ✅ bản đúng:
   categories.hasMany(categories, { as: "children", foreignKey: "parent_id" });
 
-  // ==========================
-  // PRODUCT - CATEGORY
-  // ==========================
   products.belongsTo(categories, { as: "category", foreignKey: "category_id" });
   categories.hasMany(products, { as: "products", foreignKey: "category_id" });
 
-  // ==========================
-  // Các association còn lại giữ nguyên
-  // ==========================
   feedback_reply.belongsTo(feedbacks, { as: "feedback", foreignKey: "feedback_id" });
   feedbacks.hasOne(feedback_reply, { as: "feedback_reply", foreignKey: "feedback_id" });
 
@@ -107,6 +99,11 @@ export default function initModels(sequelize) {
   user_addresses.belongsTo(users, { as: "user", foreignKey: "user_id" });
   users.hasMany(user_addresses, { as: "user_addresses", foreignKey: "user_id" });
 
+users.belongsTo(roles, { as: "role", foreignKey: "role_id" });
+roles.hasMany(users, { as: "users", foreignKey: "role_id" });
+
+
+
   return {
     carts,
     categories,
@@ -124,5 +121,6 @@ export default function initModels(sequelize) {
     reviews,
     user_addresses,
     users,
+    roles,
   };
 }
