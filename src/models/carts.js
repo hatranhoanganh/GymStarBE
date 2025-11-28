@@ -38,6 +38,7 @@ export default class carts extends Model {
     tableName: 'carts',
     schema: 'public',
     timestamps: true,
+     underscored: true,
     indexes: [
       {
         name: "carts_pkey",

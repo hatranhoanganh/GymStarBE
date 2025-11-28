@@ -14,7 +14,8 @@ import {
   resetPassword,
   updateStatus,
   getUserByKeyword,
-  getUsersByStatus
+  getUsersByStatus,
+  assignUserRole
 } from "../controllers/user.controller.js";
 import { forgotPasswordLimiter } from "../middleware/rateLimit.js";
 
@@ -34,6 +35,7 @@ userRouter.put("/DoiMatKhau/:id", changePassword);
 userRouter.post("/QuenMatKhau", forgotPasswordLimiter, forgotPassword);
 userRouter.post("/verify-otp", verifyOTP);
 userRouter.put("/DatLaiMatKhau", resetPassword);
+userRouter.put("/PhanQuyenRole/:user_id", assignUserRole);
 
 
 export default userRouter;

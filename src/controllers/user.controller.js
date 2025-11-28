@@ -449,8 +449,8 @@ const getAllUsers = async (req, res) => {
     birth_date: formatVNDate(rest.birth_date),
     createdAt: formatVNDateTime(rest.createdAt),
     updatedAt: formatVNDateTime(rest.updatedAt),
-    id: role?.role_id || null,
-    name: role?.role_name || null,
+    role_id: role?.role_id || null,
+    role_name: role?.role_name || null,
   };
 });
 
@@ -520,7 +520,16 @@ const getAllUsers = async (req, res) => {
   try {
     const { id } = req.params;
 
-    const user = await model.users.findByPk(id);
+     const user = await model.users.findByPk(id, {
+      include: [
+        {
+          model: model.roles,
+          as: "role",
+          attributes: ["role_id", "role_name"],
+        },
+      ], // join bảng roles
+    });
+
     if (!user) {
       return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
@@ -545,14 +554,22 @@ const getAllUsers = async (req, res) => {
 
     await user.update({ status: newStatus });
 
+    const formattedUser = {
+       user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      gender: user.gender,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      status: user.status,
+     role_id: user.role?.role_id || null,
+  role_name: user.role?.role_name || null,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    };
+
     return res.status(200).json({
       message: `Thay đổi trạng thái thành công. Trạng thái mới: ${newStatus}`,
-      data: {
-        user_id: user.user_id,
-        full_name: user.full_name,
-        email: user.email,
-        status: user.status,
-      },
+      data:formattedUser
     });
   } catch (error) {
     console.error("Lỗi toggleUserStatus:", error);
@@ -1119,6 +1136,53 @@ const getUserByKeyword = async (req, res) => {
   }
 };
 
+const assignUserRole = async (req, res) => {
+  try {
+    const { user_id } = req.params; // lấy user_id từ URL
+    const { role_id } = req.body;   // role_id vẫn gửi trong body
+
+    if (!role_id) {
+      return res.status(400).json({ message: "Thiếu role_id" });
+    }
+
+    // Kiểm tra user tồn tại
+    const user = await model.users.findByPk(user_id);
+    if (!user) {
+      return res.status(404).json({ message: "User không tồn tại" });
+    }
+
+    // Kiểm tra role tồn tại
+    const role = await model.roles.findByPk(role_id);
+    if (!role) {
+      return res.status(404).json({ message: "Role không tồn tại" });
+    }
+
+    // Gán role
+    user.role_id = role_id;
+    await user.save();
+
+    return res.status(200).json({
+      message: `Gán role '${role.role_name}' cho user '${user.full_name}' thành công`,
+      data: {
+        user_id: user.user_id,
+        full_name: user.full_name,
+        email: user.email,
+         birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+        status: user.status,
+        gender: user.gender,
+         createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+        role_id: role.role_id,
+        role_name: role.role_name,
+      },
+    });
+  } catch (error) {
+    console.error("Lỗi gán role:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+
 
   export {
     registerUser,
@@ -1135,4 +1199,5 @@ const getUserByKeyword = async (req, res) => {
     resetPassword,
     getUsersByStatus,
     getUserByKeyword,
+    assignUserRole,
   };

@@ -18,4 +18,30 @@ const formatVNDate = (date) => {
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 };
-export { formatVNDateTime , formatVNDate };
+const formatCartItem = (cartItem, userFullName) => {
+  const variant = cartItem.product_variant;
+  const product = variant.product;
+
+  const discount = parseFloat(product?.discount || 0);
+  const price = parseFloat(variant?.price || 0);
+  const discountedPrice = price * (1 - discount / 100);
+
+  return {
+    cart_id: cartItem.cart_id,
+    user_id: String(cartItem.user_id),
+    full_name: userFullName || null,
+    product_variant_id: cartItem.product_variant_id,
+    product_name: product?.name || null,
+    quantity: cartItem.quantity,
+    variant: {
+      color: variant?.color,
+      size: variant?.size,
+      price,
+      discount,
+      discountedPrice,
+    },
+    createdAt: formatVNDateTime(cartItem.createdAt),
+    updatedAt: formatVNDateTime(cartItem.updatedAt),
+  };
+};
+export { formatVNDateTime , formatVNDate, formatCartItem };
