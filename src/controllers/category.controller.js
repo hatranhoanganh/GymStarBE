@@ -54,50 +54,56 @@ const createCategory = async (req, res) => {
   }
 };
 
-  const getAllCategories = async (req, res) => {
-    try {
-      const rows = await model.categories.findAll({
-        attributes: ["category_id", "name", "parent_id", "createdAt", "updatedAt"],
-        order: [["category_id", "ASC"]],
-        raw: true,
-      });
+ const getAllCategories = async (req, res) => {
+  try {
+    const rows = await model.categories.findAll({
+      attributes: ["category_id", "name", "parent_id", "createdAt", "updatedAt"],
+      order: [["category_id", "ASC"]],
+      raw: true,
+    });
 
-      // Tạo map để nhóm children
-      const map = {};
-
-      rows.forEach(cat => {
-        map[cat.category_id] = {
-          category_id: cat.category_id,
-          name: cat.name,
-          createdAt: formatVNDateTime(cat.createdAt),
-        updatedAt: formatVNDateTime(cat.updatedAt),
-          children: [],
-        };
-      });
-
-      const tree = [];
-
-      rows.forEach(cat => {
-        if (cat.parent_id === null) {
-          // Danh mục gốc
-          tree.push(map[cat.category_id]);
-        } else {
-          // Push vào danh mục cha
-          if (map[cat.parent_id]) {
-            map[cat.parent_id].children.push(map[cat.category_id]);
-          }
-        }
-      });
-
+    if (rows.length === 0) {
       return res.status(200).json({
-        message: "Lấy danh mục dạng cây thành công",
-        data: tree,
+        message: "Không có danh mục nào.",
+        data: [],
       });
-    } catch (error) {
-      console.error("Lỗi getAllCategories:", error);
-      return res.status(500).json({ message: "Lỗi server" });
     }
-  };
+
+    // Format từng category trước
+    const formattedCategories = rows.map(cat => ({
+      category_id: cat.category_id,
+      name: cat.name,
+      parent_id: cat.parent_id,
+      createdAt: formatVNDateTime(cat.createdAt),
+      updatedAt: formatVNDateTime(cat.updatedAt),
+      children: [],
+    }));
+
+    // Tạo map để gắn children
+    const map = {};
+    formattedCategories.forEach(cat => {
+      map[cat.category_id] = cat;
+    });
+
+    const tree = [];
+    formattedCategories.forEach(cat => {
+      if (cat.parent_id === null) {
+        tree.push(cat);
+      } else if (map[cat.parent_id]) {
+        map[cat.parent_id].children.push(cat);
+      }
+    });
+
+    return res.status(200).json({
+      message: "Lấy danh mục dạng cây thành công",
+      data: tree,
+    });
+  } catch (error) {
+    console.error("Lỗi getAllCategories:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
 
 
 const updateCategory = async (req, res) => {
@@ -108,6 +114,7 @@ const updateCategory = async (req, res) => {
     const category = await model.categories.findOne({
       where: { category_id: id },
     });
+
     if (!category) {
       return res.status(404).json({ message: "Danh mục không tồn tại" });
     }
@@ -168,9 +175,18 @@ const updateCategory = async (req, res) => {
     category.parent_id = validParentId;
     await category.save();
 
+    // Format dữ liệu trả về
+    const formattedCategory = {
+      category_id: category.category_id,
+      name: category.name,
+      parent_id: category.parent_id,
+      createdAt: formatVNDateTime(category.createdAt),
+      updatedAt: formatVNDateTime(category.updatedAt),
+    };
+
     return res.status(200).json({
       message: "Cập nhật danh mục thành công",
-      data: category,
+      data: formattedCategory,
     });
   } catch (error) {
     console.error("Lỗi updateCategory:", error);
@@ -179,6 +195,7 @@ const updateCategory = async (req, res) => {
       .json({ message: "Lỗi server khi cập nhật danh mục" });
   }
 };
+
 
 const deleteCategory = async (req, res) => {
   try {
@@ -263,12 +280,20 @@ const getCategoryByKeyWord = async (req, res) => {
       limit: pageSize,
       offset,
       order: [["category_id", "ASC"]],
-      raw: true,
     });
+
+    // Format dữ liệu
+    const formattedData = rows.map((cat) => ({
+      category_id: cat.category_id,
+      name: cat.name,
+      parent_id: cat.parent_id,
+      createdAt: formatVNDateTime(cat.createdAt),
+      updatedAt: formatVNDateTime(cat.updatedAt),
+    }));
 
     return res.status(200).json({
       message: "Lấy danh sách danh mục thành công",
-      data: rows,
+      data: formattedData,
       pagination: {
         total,
         page: validPage,
@@ -278,20 +303,30 @@ const getCategoryByKeyWord = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi getCategoryByKeyWord:", error);
-    return res.status(500).json({ message: "Lỗi server", error });
+    return res.status(500).json({ message: "Lỗi server" });
   }
 };
-const getCategoryCap1  = async (req, res) => {
+
+const getCategoryCap1 = async (req, res) => {
   try {
     // Lấy các category cha
     const parentCategories = await model.categories.findAll({
       where: { parent_id: null },
-      attributes: ["category_id", "name"],
+      attributes: ["category_id", "name", "createdAt", "updatedAt"],
       order: [["name", "ASC"]], // sắp xếp theo tên
     });
 
+    // Format dữ liệu
+    const formattedCategories = parentCategories.map((cat) => ({
+      category_id: cat.category_id,
+      name: cat.name,
+      createdAt: formatVNDateTime(cat.createdAt),
+      updatedAt: formatVNDateTime(cat.updatedAt),
+    }));
+
     return res.status(200).json({
-      categories: parentCategories,
+      message: "Lấy danh mục cấp 1 thành công",
+      data: formattedCategories,
     });
   } catch (err) {
     console.error("Lỗi lấy danh mục cấp 1:", err);
@@ -302,42 +337,71 @@ const getCategoryCap1  = async (req, res) => {
   }
 };
 
+
 const getCategoryCap3LocCap1 = async (req, res) => {
   try {
-    const { root_id } = req.query;
+    const { root_id } = req.params; // root_id từ URL
 
     if (!root_id) {
       return res.status(400).json({ message: "Nhập thêm root_id" });
     }
 
-    // Kiểm tra root_id tồn tại
+    // Lấy danh mục root
     const rootCategory = await model.categories.findByPk(root_id);
     if (!rootCategory) {
-      return res.status(404).json({
-        message: `id không tồn tại`,
+      return res.status(404).json({ message: "Root_id không tồn tại" });
+    }
+
+    // Lấy các danh mục cấp 2 (con của root)
+    const level2Categories = await model.categories.findAll({
+      where: { parent_id: root_id },
+      attributes: ["category_id", "name"],
+    });
+
+    if (level2Categories.length === 0) {
+      return res.status(200).json({
+        message: "Không có danh mục cấp 3 dưới root này",
+        data: [],
       });
     }
 
-    // Lấy tất cả danh mục có parent_id = root_id hoặc sâu hơn
-    // Ở đây giả sử chỉ lấy các danh mục leaf trực tiếp cấp 3
-    const leafCategories = await model.categories.findAll({
-      where: {
-        parent_id: root_id,
-      },
-      attributes: ["category_id", "name", "parent_id"],
+    const level2Ids = level2Categories.map(cat => cat.category_id);
+
+    // Lấy danh mục cấp 3 (con của cấp 2)
+    const level3Categories = await model.categories.findAll({
+      where: { parent_id: level2Ids },
+      attributes: ["category_id", "name", "parent_id", "createdAt", "updatedAt"],
       order: [["name", "ASC"]],
+      raw: true,
+    });
+
+    // Format dữ liệu kiểu formatData
+    const formattedData = level3Categories.map(cat => {
+      const parent = level2Categories.find(p => p.category_id === cat.parent_id);
+      return {
+        category_id: cat.category_id,
+        name: cat.name,
+        parent_id: cat.parent_id,
+        parent_name: parent ? parent.name : null,
+        root_name: rootCategory.name,
+        createdAt: formatVNDateTime(cat.createdAt),
+        updatedAt: formatVNDateTime(cat.updatedAt),
+      };
     });
 
     return res.status(200).json({
-      message: "Lấy danh sách danh mục nhỏ nhất thành công",
-      data: leafCategories,
+      message: "Lấy danh sách danh mục cấp 3 thành công",
+      data: formattedData,
     });
 
   } catch (err) {
-    console.error("Lỗi lấy danh mục leaf:", err);
+    console.error("Lỗi lấy danh mục cấp 3:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
+
+
 
 
 export {

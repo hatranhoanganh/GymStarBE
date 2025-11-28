@@ -18,6 +18,6 @@ CategoryRouter.put("/CapNhatDanhMuc/:id", updateCategory);
 CategoryRouter.delete("/XoaDanhMuc/:id", deleteCategory);
 CategoryRouter.get("/LayDanhSachDanhMucTheoTuKhoa", getCategoryByKeyWord);
 CategoryRouter.get("/LayDanhMucCap1", getCategoryCap1);
-CategoryRouter.get("/LayDanhMucCap3LocCap1", getCategoryCap3LocCap1);
+CategoryRouter.get("/LayDanhMucCap3LocCap1/:root_id", getCategoryCap3LocCap1);
 
 export default CategoryRouter;

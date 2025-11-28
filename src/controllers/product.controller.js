@@ -10,6 +10,37 @@ import slugify from "slugify";
 dotenv.config();
 const model = initModels(sequelize);
 
+const buildCategoryCode = (name = "") => {
+  return name
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0))
+    .join("")
+    .toUpperCase();
+};
+
+const getColorCode = (color = "") => {
+  return color
+    .trim()
+    .split(/\s+/)
+    .map(word => word.charAt(0).toUpperCase())
+    .join("");
+};
+
+const buildSKU = (categoryName, productId, color, size) => {
+  const categoryCode = buildCategoryCode(categoryName);
+  const colorCode = getColorCode(color);
+
+  let sku = `${categoryCode}${productId}-${colorCode}`;
+  if (size) sku += `-${size}`; // size null thì không thêm gì
+
+  return sku;
+};
+
+
+
+
+
 const addProduct = async (req, res) => {
   try {
     const {
@@ -60,29 +91,15 @@ const addProduct = async (req, res) => {
       return res.status(400).json({ message: "Price phải là số >= 0" });
     }
 
-    // Kiểm tra product_variants
+    // Kiểm tra variants
     if (!Array.isArray(product_variants) || product_variants.length === 0) {
       return res.status(400).json({ message: "Phải có ít nhất 1 variant" });
     }
 
     for (const v of product_variants) {
-      // size giờ là tùy chọn
-      if (!v.stock && v.stock !== 0) {
+      if (v.stock === undefined) {
         return res.status(400).json({ message: "Variant phải có stock" });
       }
-      if (!v.sku) {
-        return res.status(400).json({ message: "Variant phải có SKU" });
-      }
-    }
-
-    // Kiểm tra SKU trùng
-    const existingSkus = await model.product_variants.findAll({
-      where: { sku: { [Op.in]: product_variants.map((v) => v.sku) } },
-    });
-    if (existingSkus.length > 0) {
-      return res.status(400).json({
-        message: `SKU đã tồn tại: ${existingSkus.map((e) => e.sku).join(", ")}`,
-      });
     }
 
     // ===== Tạo product =====
@@ -90,6 +107,7 @@ const addProduct = async (req, res) => {
       name,
       category_id,
       description,
+      thumbnail: null,
       discount: finalDiscount,
       spec,
       color,
@@ -97,50 +115,55 @@ const addProduct = async (req, res) => {
       status,
     });
 
-    // ===== Tạo product_variants =====
+    // ===== Tạo variant + SKU =====
+    const createdVariants = [];
     for (const v of product_variants) {
-      await model.product_variants.create({
+      const autoSKU = buildSKU(category.name, newProduct.product_id, color, v.size);
+
+      const newVar = await model.product_variants.create({
         product_id: newProduct.product_id,
         color,
-        size: v.size || null, // size tùy chọn
+        size: v.size || null,
         stock: v.stock,
-        sku: v.sku,
         price,
+        discount: finalDiscount,
+        sku: autoSKU,
       });
+
+      createdVariants.push(newVar);
     }
 
-    // ===== Lấy lại product full =====
-    const productData = await model.products.findOne({
-      where: { product_id: newProduct.product_id },
-      include: [
-        { model: model.categories, as: "category", attributes: ["name"] },
-        {
-          model: model.product_variants,
-          as: "product_variants",
-          attributes: [
-            "product_variant_id",
-            "size",
-            "stock",
-            "sku",
-            "price",
-            "color",
-          ],
-        },
-      ],
-    });
+    // ===== Format trả về giống addProductVariant =====
+    const formattedVariants = createdVariants.map((v) => ({
+      product_variant_id: v.product_variant_id,
+      size: v.size,
+      stock: v.stock,
+      color: v.color,
+      sku: v.sku,
+      price: v.price,
+      discount: v.discount,
+    }));
 
-    const data = {
-      ...productData.toJSON(),
-      createdAt: formatVNDateTime(productData.createdAt),
-      updatedAt: formatVNDateTime(productData.updatedAt),
-      category_name: productData.category?.name,
+    const formatData = {
+      product_id: newProduct.product_id,
+      name: newProduct.name,
+      description: newProduct.description,
+      thumbnail: newProduct.thumbnail,
+      discount: newProduct.discount,
+      spec: newProduct.spec,
+      color: newProduct.color,
+      price: newProduct.price,
+      status: newProduct.status,
+      category_id,
+      category_name: category.name,
+      createdAt: formatVNDateTime(newProduct.createdAt),
+      updatedAt: formatVNDateTime(newProduct.updatedAt),
+      product_variants: formattedVariants,
     };
-    delete data.category_id;
-    delete data.category;
 
     return res.status(201).json({
       message: "Tạo sản phẩm thành công",
-      data,
+      data: formatData,
     });
   } catch (error) {
     console.error("Lỗi createProduct:", error);
@@ -150,39 +173,46 @@ const addProduct = async (req, res) => {
   }
 };
 
+  
+
+
 
 const addProductVariant = async (req, res) => {
   try {
-    const { id: product_id } = req.params;
+    const { product_id } = req.params;
     const { color, price, discount, variants } = req.body;
 
     // ===== KIỂM TRA PRODUCT =====
-    const product = await model.products.findByPk(product_id);
+    const product = await model.products.findByPk(product_id, {
+      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+    });
+
     if (!product) {
-      return res.status(404).json({ message: "Sản phẩm   không tồn tại" });
+      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-    // ===== KIỂM TRA COLOR TRÙNG TRONG SẢN PHẨM =====
+    // ===== VALIDATE COLOR =====
+    if (!color || typeof color !== "string") {
+      return res.status(400).json({ message: "color bắt buộc và phải là chuỗi" });
+    }
+
+    // ===== KIỂM TRA COLOR TRÙNG =====
     const colorExist = await model.product_variants.findOne({
       where: { product_id, color },
     });
+
     if (colorExist) {
       return res.status(400).json({
         message: `Màu "${color}" đã tồn tại trong sản phẩm này`,
       });
     }
 
-    // ===== VALIDATE INPUT =====
-    if (!color || typeof color !== "string") {
-      return res
-        .status(400)
-        .json({ message: "color bắt buộc và phải là chuỗi" });
-    }
-
+    // ===== VALIDATE GIÁ =====
     if (typeof price !== "number" || price < 0) {
       return res.status(400).json({ message: "price phải là số >= 0" });
     }
 
+    // ===== VALIDATE DISCOUNT =====
     let finalDiscount = 0;
     if (discount !== undefined && discount !== null) {
       if (typeof discount !== "number") {
@@ -194,51 +224,66 @@ const addProductVariant = async (req, res) => {
       finalDiscount = discount;
     }
 
+    // ===== VALIDATE VARIANTS =====
     if (!Array.isArray(variants) || variants.length === 0) {
       return res.status(400).json({ message: "Phải có ít nhất 1 variant" });
     }
 
-    // ===== KIỂM TRA SKU TRÙNG =====
-    const skuList = variants.map((v) => v.sku);
-    const existingSku = await model.product_variants.findAll({
-      where: { sku: skuList },
-    });
-    if (existingSku.length > 0) {
-      return res.status(400).json({
-        message: `SKU đã tồn tại: ${existingSku.map((e) => e.sku).join(", ")}`,
-      });
+    for (const v of variants) {
+      if (v.stock === undefined) {
+        return res.status(400).json({ message: "Mỗi variant phải có stock" });
+      }
     }
 
     // ===== TẠO VARIANTS MỚI =====
     const createdVariants = [];
+
     for (const v of variants) {
-      const hasSize = v.size ? true : false; // nếu có size -> hasSize = true
+      const autoSKU = buildSKU(
+        product.category.name,
+        product.product_id,
+        color,
+        v.size // size null sẽ không thêm gì vào SKU
+      );
 
       const newVar = await model.product_variants.create({
         product_id,
         color,
-        size: hasSize ? v.size : null, // nếu không có size thì để null
+        size: v.size || null,
         stock: v.stock,
         price,
         discount: finalDiscount,
-        sku: v.sku,
-        has_size: hasSize, // tự tạo cột để đánh dấu
+        sku: autoSKU,
       });
 
       createdVariants.push(newVar);
     }
 
-    // ===== TRẢ VỀ =====
+    // ===== FORMAT TRẢ VỀ =====
+    const formattedVariants = createdVariants.map((v) => ({
+      product_variant_id: v.product_variant_id,
+      size: v.size,
+      stock: v.stock,
+      color: v.color,
+      sku: v.sku,
+      price: v.price,
+      discount: v.discount,
+    }));
+
     return res.status(201).json({
       message: "Thêm biến thể thành công",
-      product: {
+      data: {
         product_id: product.product_id,
         name: product.name,
         description: product.description,
+        thumbnail: product.thumbnail,
         discount: product.discount,
         spec: product.spec,
+        color: product.color,
+        price: product.price,
+        category_name: product.category?.name || null,
+        new_variants: formattedVariants,
       },
-      added_variants: createdVariants,
     });
   } catch (err) {
     console.error(err);
@@ -246,23 +291,24 @@ const addProductVariant = async (req, res) => {
   }
 };
 
+
 const addSizeToVariant = async (req, res) => {
   try {
-    const { id: product_id, color } = req.params;
-    const { size, stock, sku } = req.body;
+    const { product_id, color } = req.params;
+    const { size, stock } = req.body;
 
-    // ====== Kiểm tra input ======
-    if (!size || stock === undefined || !sku) {
-      return res.status(400).json({
-        message: "size, stock, sku là bắt buộc",
-      });
+    // ====== Validate input ======
+
+    if (stock === undefined || typeof stock !== "number" || stock <= 0) {
+      return res.status(400).json({ message: "Stock phải là số > 0" });
     }
 
-    // ====== Chuẩn hóa color ======
     const colorTrimmed = color.replace(/\s+/g, " ").trim();
 
     // ====== Kiểm tra product tồn tại ======
-    const product = await model.products.findByPk(product_id);
+    const product = await model.products.findByPk(product_id, {
+      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+    });
     if (!product) {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
@@ -287,11 +333,13 @@ const addSizeToVariant = async (req, res) => {
       });
     }
 
-    // ====== Kiểm tra SKU trùng ======
-    const skuExist = await model.product_variants.findOne({ where: { sku } });
-    if (skuExist) {
-      return res.status(400).json({ message: `SKU "${sku}" đã tồn tại.` });
-    }
+    // ====== Tạo SKU tự động ======
+    const sku = buildSKU(
+      product.category.name,
+      product.product_id,
+      colorTrimmed,
+      size
+    );
 
     // ====== Tạo size mới ======
     const newVariant = await model.product_variants.create({
@@ -299,20 +347,43 @@ const addSizeToVariant = async (req, res) => {
       color: colorTrimmed,
       size,
       stock,
-      price: existingColor.price, // Lấy theo màu hiện có
-      discount: existingColor.discount, // Lấy theo màu hiện có
+      price: existingColor.price,
+      discount: existingColor.discount,
       sku,
     });
 
+    // ====== Format giống addProductVariant ======
+    const formattedVariant = {
+      product_variant_id: newVariant.product_variant_id,
+      size: newVariant.size,
+      stock: newVariant.stock,
+      color: newVariant.color,
+      sku: newVariant.sku,
+      price: newVariant.price,
+      discount: newVariant.discount,
+    };
+
     return res.status(201).json({
       message: "Thêm size mới thành công",
-      variant: newVariant,
+      data: {
+        product_id: product.product_id,
+        name: product.name,
+        description: product.description,
+        thumbnail: product.thumbnail,
+        discount: product.discount,
+        spec: product.spec,
+        color: colorTrimmed,
+        price: existingColor.price,
+        category_name: product.category?.name || null,
+        new_variants: [formattedVariant],
+      },
     });
   } catch (err) {
     console.error(err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
 const getAllChildCategoryIds = (categories, parentId) => {
   let result = [];
 
@@ -332,7 +403,7 @@ const getAllChildCategoryIds = (categories, parentId) => {
 
 const getProductByDanhMucCap1 = async (req, res) => {
   try {
-    const root_id = parseInt(req.query.root_id);
+    const root_id = parseInt(req.params.root_id);
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
@@ -341,7 +412,9 @@ const getProductByDanhMucCap1 = async (req, res) => {
     }
 
     // 1. Kiểm tra danh mục cấp 1
-    const rootCategory = await model.categories.findByPk(root_id);
+    const rootCategory = await model.categories.findByPk(root_id, {
+      include: [{ model: model.categories, as: "parent" }]
+    });
     if (!rootCategory)
       return res.status(404).json({ message: "Danh mục cấp 1 không tồn tại" });
 
@@ -358,9 +431,7 @@ const getProductByDanhMucCap1 = async (req, res) => {
 
     // 3. Lấy toàn bộ ID danh mục con mọi cấp
     const childIds = getAllChildCategoryIds(allCategories, root_id);
-
-    // Nếu chính danh mục cấp 1 có sản phẩm → thêm root_id vào luôn
-    childIds.push(root_id);
+    childIds.push(root_id); // Thêm root_id nếu có sản phẩm
 
     // 4. Đếm tổng sản phẩm
     const total = await model.products.count({
@@ -372,47 +443,101 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const offset = (validPage - 1) * limit;
 
     // 5. Lấy danh sách sản phẩm
-    const products = await model.products.findAll({
+    const rows = await model.products.findAll({
       where: { category_id: { [Op.in]: childIds } },
-
-      attributes: [
-        "product_id",
-        "name",
-        "category_id",
-        "description",
-        "discount",
-        "thumbnail",
-        "spec",
-        [
-          literal(
-            `(SELECT SUM(stock) FROM product_variants WHERE product_variants.product_id = products.product_id)`
-          ),
-          "total_stock",
-        ],
-      ],
-
       limit,
       offset,
       order: [["name", "ASC"]],
-      raw: true,
+      attributes: [
+        "product_id",
+        "name",
+        "description",
+        "discount",
+        "spec",
+        "thumbnail",
+        "status",
+        "category_id",
+        ["created_at", "createdAt"],
+        ["updated_at", "updatedAt"],
+      ],
+      include: [
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["name", "parent_id"],
+          include: [
+            {
+              model: model.categories,
+              as: "parent",
+              attributes: ["name"],
+            },
+          ],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: [
+            "product_variant_id",
+            "color",
+            "size",
+            "stock",
+            "price",
+            "sku"
+          ],
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
+        },
+      ],
+      nest: true,
+    });
+
+    // 6. Format dữ liệu giống getAllProducts
+    const formatted = rows.map((p) => {
+      // Gom ảnh theo màu
+      const colorMap = {};
+      p.product_images.forEach((img) => {
+        if (!colorMap[img.color]) {
+          colorMap[img.color] = { color: img.color, images: [] };
+        }
+        colorMap[img.color].images.push(img.image);
+      });
+
+      return {
+        product_id: p.product_id,
+        name: p.name,
+        description: p.description,
+        discount: p.discount,
+        spec: p.spec || null,
+        thumbnail: p.thumbnail,
+        status: p.status,
+        category_id: p.category_id,
+        category_name: p.category?.name || null,
+        parent_category_name: p.category?.parent?.name || null,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
+        variants: p.product_variants || [],
+        colors: Object.values(colorMap),
+        
+      };
     });
 
     return res.status(200).json({
       message: "Lấy sản phẩm từ danh mục cấp 1 thành công",
-      data: products,
-      pagination: {
-        total,
-        page: validPage,
-        limit,
-        totalPages,
-      },
-     
+      total,
+      page: validPage,
+      totalPages,
+      data: formatted,
     });
   } catch (err) {
     console.error("Lỗi getProductByDanhMucCap1:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
+
 
 const getAllProducts = async (req, res) => {
   try {
@@ -440,13 +565,13 @@ const getAllProducts = async (req, res) => {
     const rows = await model.products.findAll({
       limit,
       offset,
-      order: [["created_at", "DESC"]],
+      order: [["createdAt", "DESC"]],
       attributes: [
         "product_id",
         "name",
         "description",
         "discount",
-          "spec", 
+        "spec",
         "thumbnail",
         "status",
         "category_id",
@@ -466,10 +591,6 @@ const getAllProducts = async (req, res) => {
             },
           ],
         },
-
-        // ============================
-        // LẤY VARIANTS
-        // ============================
         {
           model: model.product_variants,
           as: "product_variants",
@@ -479,13 +600,9 @@ const getAllProducts = async (req, res) => {
             "size",
             "stock",
             "price",
-            "sku",
+            "sku"
           ],
         },
-
-        // ============================
-        // LẤY ẢNH THEO MÀU
-        // ============================
         {
           model: model.product_images,
           as: "product_images",
@@ -498,11 +615,9 @@ const getAllProducts = async (req, res) => {
     // =============================
     // FORMAT DỮ LIỆU
     // =============================
-
     const formatted = rows.map((p) => {
       // Gom ảnh theo màu
       const colorMap = {};
-
       p.product_images.forEach((img) => {
         if (!colorMap[img.color]) {
           colorMap[img.color] = {
@@ -513,29 +628,35 @@ const getAllProducts = async (req, res) => {
         colorMap[img.color].images.push(img.image);
       });
 
+      // Format variants
+      const formattedVariants = p.product_variants.map((v) => ({
+        product_variant_id: v.product_variant_id,
+        color: v.color,
+        size: v.size,
+        stock: v.stock,
+        price: v.price,
+        sku: v.sku,
+      }));
+
       return {
         product_id: p.product_id,
         name: p.name,
         description: p.description,
         discount: p.discount,
-         spec: p.spec || null,
+        spec: p.spec || null,
         thumbnail: p.thumbnail,
         status: p.status,
 
-        // category
         category_id: p.category_id,
         category_name: p.category?.name || null,
         parent_category_name: p.category?.parent?.name || null,
-
-        // variants
-        variants: p.product_variants || [],
-
-        // images grouped by color
-        colors: Object.values(colorMap),
-
-        // format ngày
         createdAt: formatVNDateTime(p.createdAt),
         updatedAt: formatVNDateTime(p.updatedAt),
+
+        product_variants: formattedVariants,
+        colors: Object.values(colorMap),
+
+        
       };
     });
 
@@ -554,6 +675,7 @@ const getAllProducts = async (req, res) => {
     });
   }
 };
+
 
 const getProductVariants = async (req, res) => {
   try {
@@ -805,49 +927,130 @@ const getActiveProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-    // 1. Tổng số bản ghi active
+    // 1. Tổng số sản phẩm active
     const total = await model.products.count({ where: { status: "active" } });
 
-    // 2. Tính totalPages & validPage
+    if (total === 0) {
+      return res.status(200).json({
+        message: "Không có dữ liệu sản phẩm active.",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
     const totalPages = Math.ceil(total / limit);
     const validPage = Math.min(page, totalPages || 1);
     const offset = (validPage - 1) * limit;
 
-    // 3. Lấy danh sách sản phẩm active phân trang
-    const products = await model.products.findAll({
+    // 2. Lấy danh sách sản phẩm active
+    const rows = await model.products.findAll({
       where: { status: "active" },
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]],
       attributes: [
         "product_id",
         "name",
-        "category_id",
         "description",
         "discount",
+        "spec",
         "thumbnail",
         "status",
+        "category_id",
+        "createdAt",
+        "updatedAt",
       ],
       include: [
         {
           model: model.categories,
           as: "category",
-          attributes: ["category_id", "name", "parent_id"],
+          attributes: ["name", "parent_id"],
+          include: [
+            {
+              model: model.categories,
+              as: "parent",
+              attributes: ["name"],
+            },
+          ],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: [
+            "product_variant_id",
+            "color",
+            "size",
+            "stock",
+            "price",
+            "sku",
+          ],
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
         },
       ],
-      limit,
-      offset,
-      order: [["createdAt", "DESC"]],
-      raw: true,
+      nest: true,
+    });
+
+    // 3. Format dữ liệu
+    const formatted = rows.map((p) => {
+      // Gom ảnh theo màu
+      const colorMap = {};
+      p.product_images.forEach((img) => {
+        if (!colorMap[img.color]) {
+          colorMap[img.color] = { color: img.color, images: [] };
+        }
+        colorMap[img.color].images.push(img.image);
+      });
+
+      // Format variants
+      const formattedVariants = p.product_variants.map((v) => ({
+        product_variant_id: v.product_variant_id,
+        color: v.color,
+        size: v.size,
+        stock: v.stock,
+        price: v.price,
+        sku: v.sku,
+      }));
+
+      return {
+        product_id: p.product_id,
+        name: p.name,
+        description: p.description,
+        discount: p.discount,
+        spec: p.spec || null,
+        thumbnail: p.thumbnail,
+        status: p.status,
+        category_id: p.category_id,
+        category_name: p.category?.name || null,
+        parent_category_name: p.category?.parent?.name || null,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
+        product_variants: formattedVariants,
+        colors: Object.values(colorMap),
+      };
     });
 
     return res.status(200).json({
       message: "Lấy danh sách sản phẩm active thành công",
-      data: products,
-      pagination: { total, page: validPage, limit, totalPages },
+      total,
+      page: validPage,
+      totalPages,
+      data: formatted,
     });
   } catch (err) {
     console.error("Lỗi getActiveProducts:", err);
-    return res.status(500).json({ message: "Lỗi server", error: err.message });
+    return res.status(500).json({
+      message: "Lỗi server",
+      error: err.message,
+    });
   }
 };
+
 
 const getProductByKeyWordAdmin = async (req, res) => {
   try {

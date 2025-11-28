@@ -274,6 +274,7 @@ const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
+    // ===== Lấy user =====
     const user = await model.users.findOne({
       where: { email },
       include: [
@@ -285,15 +286,17 @@ const loginUser = async (req, res) => {
       ],
     });
 
-    if (!user)
-      return res
-        .status(400)
-        .json({ message: "Email hoặc mật khẩu không đúng" });
+    if (!user) {
+      return res.status(400).json({
+        message: "Email hoặc mật khẩu không đúng",
+      });
+    }
 
+    // ===== Kiểm tra trạng thái =====
     if (user.status === "unverified") {
       return res.status(403).json({
         message:
-          "Email này đã được đăng ký nhưng chưa xác nhận. Vui lòng kiểm tra email (bao gồm mục Spam/Junk) để xác nhận tài khoản.",
+          "Email này đã được đăng ký nhưng chưa xác nhận. Vui lòng kiểm tra email để xác nhận tài khoản.",
       });
     }
 
@@ -304,13 +307,15 @@ const loginUser = async (req, res) => {
       });
     }
 
+    // ===== Check password =====
     const isMatch = await bcrypt.compare(password, user.password);
-    if (!isMatch)
-      return res
-        .status(400)
-        .json({ message: "Email hoặc mật khẩu không đúng" });
+    if (!isMatch) {
+      return res.status(400).json({
+        message: "Email hoặc mật khẩu không đúng",
+      });
+    }
 
-    // Tạo token
+    // ===== Tạo token =====
     const accessToken = jwt.sign(
       { user_id: user.user_id, email: user.email, role: user.role?.role_id },
       process.env.ACCESS_TOKEN_SECRET,
@@ -323,33 +328,35 @@ const loginUser = async (req, res) => {
       { expiresIn: "7d" }
     );
 
-    // Format user
-   const formattedUser = {
-  user_id: user.user_id,
-  full_name: user.full_name,
-  email: user.email,
-  status: user.status,
-  role_id: user.role?.role_id || null,
-  role_name: user.role?.role_name || null,
-};
-
-
-    // Log token + user info trong terminal, KHÔNG trả token cho client
-    console.log( {
+    console.log({
       accessToken,
       refreshToken,
     });
 
-    // Trả API chỉ gồm user
+    // ===== FORMAT DATA GIỐNG addProduct =====
+    const formatData = {
+      user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      gender: user.gender,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      status: user.status,
+      role_id: user.role?.role_id || null,
+      role_name: user.role?.role_name || null,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    };
+
     return res.status(200).json({
       message: "Đăng nhập thành công",
-      user: formattedUser,
+      user: formatData,
     });
   } catch (error) {
     console.error("Lỗi đăng nhập:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+;
 
 
 
@@ -440,19 +447,19 @@ const getAllUsers = async (req, res) => {
       order: [["user_id", "ASC"]],
     });
 
-    // Format dữ liệu, đưa role_id và role_name ra ngoài, bỏ object role
-   const formattedData = users.map((user) => {
-  const jsonUser = user.toJSON();
-  const { role, ...rest } = jsonUser; // loại bỏ object role
-  return {
-    ...rest,
-    birth_date: formatVNDate(rest.birth_date),
-    createdAt: formatVNDateTime(rest.createdAt),
-    updatedAt: formatVNDateTime(rest.updatedAt),
-    role_id: role?.role_id || null,
-    role_name: role?.role_name || null,
-  };
-});
+    // ===== Format dữ liệu giống addProduct =====
+    const formattedData = users.map((user) => ({
+      user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      gender: user.gender,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      status: user.status,
+      role_id: user.role?.role_id || null,
+      role_name: user.role?.role_name || null,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    }));
 
     return res.status(200).json({
       message: "Lấy danh sách người dùng thành công",
@@ -471,8 +478,9 @@ const getAllUsers = async (req, res) => {
 
 
 
+
   /** ============ LẤY THÔNG TIN MỘT NGƯỜI DÙNG THEO ID ============ */
- const getUserById = async (req, res) => {
+const getUserById = async (req, res) => {
   try {
     const { id } = req.params;
     if (!id) {
@@ -480,8 +488,8 @@ const getAllUsers = async (req, res) => {
     }
 
     // Lấy user kèm role
-    const user = await model.users.findByPk(id, {
-      attributes: ["user_id", "full_name", "email", "gender", "birth_date", "status"],
+    const userData = await model.users.findByPk(id, {
+      attributes: ["user_id", "full_name", "email", "gender", "birth_date", "status", "createdAt", "updatedAt"],
       include: [
         {
           model: model.roles,
@@ -491,19 +499,22 @@ const getAllUsers = async (req, res) => {
       ],
     });
 
-    if (!user) {
+    if (!userData) {
       return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
 
     // Format dữ liệu
-    const userJSON = user.toJSON();
-    const { role, ...rest } = userJSON;
-
     const formattedUser = {
-      ...rest,
-      birth_date: rest.birth_date ? formatVNDate(rest.birth_date) : null,
-      role_id: role?.role_id || null,
-      role_name: role?.role_name || null,
+      user_id: userData.user_id,
+      full_name: userData.full_name,
+      email: userData.email,
+      gender: userData.gender,
+      birth_date: userData.birth_date ? formatVNDate(userData.birth_date) : null,
+      status: userData.status,
+      role_id: userData.role?.role_id || null,
+      role_name: userData.role?.role_name || null,
+      createdAt: formatVNDateTime(userData.createdAt),
+      updatedAt: formatVNDateTime(userData.updatedAt),
     };
 
     return res.status(200).json({
@@ -515,6 +526,7 @@ const getAllUsers = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
  const updateStatus = async (req, res) => {
   try {
@@ -1005,9 +1017,9 @@ const getUsersByStatus = async (req, res) => {
       condition.status = { [Op.eq]: status };
     }
 
-    const users = await model.users.findAll({
+    const usersData = await model.users.findAll({
       where: condition,
-      attributes: ["user_id", "full_name", "email", "status","gender", "birth_date", "createdAt", "updatedAt"],
+      attributes: ["user_id", "full_name", "email", "status", "gender", "birth_date", "createdAt", "updatedAt"],
       include: [
         {
           model: model.roles,
@@ -1018,7 +1030,7 @@ const getUsersByStatus = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-    if (users.length === 0) {
+    if (!usersData.length) {
       return res.status(200).json({
         message: "Không có tài khoản nào.",
         count: 0,
@@ -1026,24 +1038,25 @@ const getUsersByStatus = async (req, res) => {
       });
     }
 
-    const formattedData = users.map((user) => {
-      const userJSON = user.toJSON();
-      const { role, ...rest } = userJSON;
-      return {
-        ...rest,
-        birth_date: rest.birth_date ? formatVNDate(rest.birth_date) : null,
-        createdAt: formatVNDateTime(rest.createdAt),
-        updatedAt: formatVNDateTime(rest.updatedAt),
-        role_id: role?.role_id || null,
-        role_name: role?.role_name || null,
-      };
-    });
+    // Format dữ liệu từng user
+    const formattedData = usersData.map((user) => ({
+      user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      gender: user.gender,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      status: user.status,
+      role_id: user.role?.role_id || null,
+      role_name: user.role?.role_name || null,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    }));
 
     return res.status(200).json({
       message: status
         ? `Danh sách người dùng có status = '${status}'`
         : "Danh sách toàn bộ người dùng",
-      count: users.length,
+      count: formattedData.length,
       data: formattedData,
     });
   } catch (error) {
@@ -1051,6 +1064,7 @@ const getUsersByStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 // Lấy danh sách người dùng theo keyword (với phân trang)
@@ -1069,10 +1083,10 @@ const getUserByKeyword = async (req, res) => {
         }
       : {};
 
-    const count = await model.users.count({ where: whereCondition });
-    const totalPages = Math.ceil(count / pageSize);
+    const totalUsers = await model.users.count({ where: whereCondition });
+    const totalPages = Math.ceil(totalUsers / pageSize);
 
-    if (count === 0) {
+    if (totalUsers === 0) {
       return res.status(200).json({
         message: "Không có tài khoản nào.",
         totalUsers: 0,
@@ -1085,7 +1099,7 @@ const getUserByKeyword = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    const rows = await model.users.findAll({
+    const usersData = await model.users.findAll({
       where: whereCondition,
       attributes: ["user_id", "full_name", "email", "status", "birth_date", "createdAt", "updatedAt"],
       include: [
@@ -1100,32 +1114,21 @@ const getUserByKeyword = async (req, res) => {
       limit: pageSize,
     });
 
-    if (rows.length === 0) {
-      return res.status(200).json({
-        message: "Không có tài khoản nào ở trang này.",
-        totalUsers: count,
-        currentPage: validPage,
-        totalPages,
-        data: [],
-      });
-    }
-
-    const formattedData = rows.map((user) => {
-      const userJSON = user.toJSON();
-      const { role, ...rest } = userJSON;
-      return {
-        ...rest,
-        birth_date: rest.birth_date ? formatVNDate(rest.birth_date) : null,
-        createdAt: formatVNDateTime(rest.createdAt),
-        updatedAt: formatVNDateTime(rest.updatedAt),
-        role_id: role?.role_id || null,
-        role_name: role?.role_name || null,
-      };
-    });
+    const formattedData = usersData.map((user) => ({
+      user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      status: user.status,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      role_id: user.role?.role_id || null,
+      role_name: user.role?.role_name || null,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+    }));
 
     return res.status(200).json({
       message: "Lấy danh sách người dùng thành công",
-      totalUsers: count,
+      totalUsers,
       currentPage: validPage,
       totalPages,
       data: formattedData,
@@ -1136,10 +1139,11 @@ const getUserByKeyword = async (req, res) => {
   }
 };
 
+
 const assignUserRole = async (req, res) => {
   try {
     const { user_id } = req.params; // lấy user_id từ URL
-    const { role_id } = req.body;   // role_id vẫn gửi trong body
+    const { role_id } = req.body;   // role_id gửi trong body
 
     if (!role_id) {
       return res.status(400).json({ message: "Thiếu role_id" });
@@ -1161,26 +1165,30 @@ const assignUserRole = async (req, res) => {
     user.role_id = role_id;
     await user.save();
 
+    // Format dữ liệu user trả về
+    const formattedUser = {
+      user_id: user.user_id,
+      full_name: user.full_name,
+      email: user.email,
+      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
+      status: user.status,
+      gender: user.gender,
+      createdAt: formatVNDateTime(user.createdAt),
+      updatedAt: formatVNDateTime(user.updatedAt),
+      role_id: role.role_id,
+      role_name: role.role_name,
+    };
+
     return res.status(200).json({
       message: `Gán role '${role.role_name}' cho user '${user.full_name}' thành công`,
-      data: {
-        user_id: user.user_id,
-        full_name: user.full_name,
-        email: user.email,
-         birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
-        status: user.status,
-        gender: user.gender,
-         createdAt: formatVNDateTime(user.createdAt),
-      updatedAt: formatVNDateTime(user.updatedAt),
-        role_id: role.role_id,
-        role_name: role.role_name,
-      },
+      data: formattedUser,
     });
   } catch (error) {
     console.error("Lỗi gán role:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 

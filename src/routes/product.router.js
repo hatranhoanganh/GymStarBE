@@ -24,9 +24,9 @@ import {
 const ProductRouter = express.Router();
 
 ProductRouter.post("/TaoSanPham", addProduct);
-ProductRouter.post("/ThemBienThe/:id", addProductVariant);
-ProductRouter.post("/ThemSize/:id/:color", addSizeToVariant);
-ProductRouter.get("/LaySanPhamTheoDanhMucCap1", getProductByDanhMucCap1);
+ProductRouter.post("/ThemBienThe/:product_id", addProductVariant);
+ProductRouter.post("/ThemSize/:product_id/:color", addSizeToVariant);
+ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
 ProductRouter.get("/LayTatCaSanPhamAdmin", getAllProducts);
 ProductRouter.get("/LayBienTheSanPham/:id", getProductVariants);
 ProductRouter.put("/CapNhatSanPham/:id", updateProduct);
