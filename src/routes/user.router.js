@@ -15,7 +15,11 @@ import {
   updateStatus,
   getUserByKeyword,
   getUsersByStatus,
-  assignUserRole
+  assignUserRole, 
+  getAllRoles,
+  createRole,
+  updateRole,
+  deleteRole,
 } from "../controllers/user.controller.js";
 import { forgotPasswordLimiter } from "../middleware/rateLimit.js";
 
@@ -36,6 +40,10 @@ userRouter.post("/QuenMatKhau", forgotPasswordLimiter, forgotPassword);
 userRouter.post("/verify-otp", verifyOTP);
 userRouter.put("/DatLaiMatKhau", resetPassword);
 userRouter.put("/PhanQuyenRole/:user_id", assignUserRole);
+userRouter.get("/LayDanhSachRole", getAllRoles);
+userRouter.post("/TaoRole", createRole);
+userRouter.put("/CapNhatRole/:role_id", updateRole);
+userRouter.delete("/XoaRole/:role_id", deleteRole);
 
 
 export default userRouter;

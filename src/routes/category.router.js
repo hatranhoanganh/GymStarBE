@@ -14,7 +14,7 @@ const CategoryRouter = express.Router();
 
 CategoryRouter.get("/LayDanhSachDanhMuc", getAllCategories);
 CategoryRouter.post("/TaoDanhMuc", createCategory);
-CategoryRouter.put("/CapNhatDanhMuc/:id", updateCategory);
+CategoryRouter.put("/CapNhatDanhMuc/:category_id", updateCategory);
 CategoryRouter.delete("/XoaDanhMuc/:id", deleteCategory);
 CategoryRouter.get("/LayDanhSachDanhMucTheoTuKhoa", getCategoryByKeyWord);
 CategoryRouter.get("/LayDanhMucCap1", getCategoryCap1);

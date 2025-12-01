@@ -1,34 +1,43 @@
-import multer from 'multer';
-import fs from 'fs';
-import path from 'path';
+import multer from "multer";
+import fs from "fs/promises";
+import path from "path";
 
-// Cấu hình multer để lưu file tạm thời vào thư mục 'uploads'
+// Thư mục lưu file tạm
+const UPLOAD_DIR = path.join(process.cwd(), "uploads");
+
+// Cấu hình storage
 const storage = multer.diskStorage({
-  destination: (req, file, cb) => {
-    const uploadDir = 'uploads/';
-    // Kiểm tra và tạo thư mục nếu chưa tồn tại
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
-      console.log('Đã tạo thư mục uploads/');
+  destination: async (req, file, cb) => {
+    try {
+      // Tạo folder nếu chưa tồn tại
+      await fs.mkdir(UPLOAD_DIR, { recursive: true });
+      cb(null, UPLOAD_DIR);
+    } catch (err) {
+      cb(err);
     }
-    cb(null, uploadDir); // Thư mục tạm để lưu file trước khi upload lên Cloudinary
   },
   filename: (req, file, cb) => {
-    cb(null, Date.now() + '-' + file.originalname); // Đặt tên file với timestamp để tránh trùng
+    const timestamp = Date.now();
+    const safeName = file.originalname.replace(/\s+/g, "_"); // thay khoảng trắng
+    cb(null, `${timestamp}-${safeName}`);
   },
 });
 
+// File filter: chỉ cho phép ảnh
+const fileFilter = (req, file, cb) => {
+  if (file.mimetype.startsWith("image/")) {
+    cb(null, true);
+  } else {
+    cb(new Error("Chỉ được upload file ảnh!"), false);
+  }
+};
+
+// Multer config
 const upload = multer({
   storage,
-  fileFilter: (req, file, cb) => {
-    // Chỉ cho phép upload file ảnh
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Chỉ được upload file ảnh!'), false);
-    }
-  },
-  limits: { fileSize: 5 * 1024 * 1024 }, // Giới hạn kích thước file: 5MB
+  fileFilter,
+  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
 });
 
-export default upload;
+// Export default: dùng trực tiếp upload trong router
+export default upload.any(); // nhận tất cả file dynamic field

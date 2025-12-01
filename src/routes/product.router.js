@@ -19,11 +19,13 @@ import {
     updateProductStatus,
     updateThumbnailProduct,
     updateImagesProductByColor,
+    addFullProduct,
 } from "../controllers/product.controller.js";
 
 const ProductRouter = express.Router();
+ProductRouter.post("/TaoSanPhamFull", upload, addFullProduct);
 
-ProductRouter.post("/TaoSanPham", addProduct);
+// ProductRouter.post("/TaoSanPham", addProduct);
 ProductRouter.post("/ThemBienThe/:product_id", addProductVariant);
 ProductRouter.post("/ThemSize/:product_id/:color", addSizeToVariant);
 ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
@@ -34,13 +36,13 @@ ProductRouter.put("/CapNhatBienThe/:id", updateProductVariant);
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaAdmin", getProductByKeyWordAdmin);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-ProductRouter.post("/ThemAnhSanPham/:product_id", upload.single("thumbnail"), addThumbnailProduct);
-ProductRouter.post("/ThemAnhSanPhamTheoMau/:product_id", upload.array("images"), addImageProductByColor);
+// ProductRouter.post("/ThemAnhSanPham/:product_id", upload.single("thumbnail"), addThumbnailProduct);
+// ProductRouter.post("/ThemAnhSanPhamTheoMau/:product_id", upload.array("images"), addImageProductByColor);
 ProductRouter.get("/ChiTietSanPhamAdmin/:product_id", getProductDetailAdmin);
 ProductRouter.get("/ChiTietSanPhamUser/:product_id", getProductDetailUser);
 ProductRouter.put("/CapNhatTrangThaiSanPham/:id", updateProductStatus);
-ProductRouter.put("/CapNhatAnhSanPham/:product_id",upload.single("thumbnail"), updateThumbnailProduct);
-ProductRouter.put("/CapNhatAnhTheoMau/:product_id", upload.array("images"), updateImagesProductByColor);
+// ProductRouter.put("/CapNhatAnhSanPham/:product_id",upload.single("thumbnail"), updateThumbnailProduct);
+// ProductRouter.put("/CapNhatAnhTheoMau/:product_id", upload.array("images"), updateImagesProductByColor);
 
 
 

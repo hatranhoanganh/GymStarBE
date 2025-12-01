@@ -28,14 +28,21 @@ export default class products extends Model {
           allowNull: true,
         },
         discount: {
-          type: DataTypes.DECIMAL,
+          type: DataTypes.DECIMAL(5, 2),
           allowNull: true,
           defaultValue: 0,
+          validate: {
+            min: 0,
+            max: 100,
+          },
         },
         status: {
           type: DataTypes.STRING(20),
           allowNull: false,
-          defaultValue: "active",
+          defaultValue: "đang bán",
+          validate: {
+            isIn: [["đang bán", "ngưng bán"]],
+          },
         },
         thumbnail: {
           type: DataTypes.STRING(255),
