@@ -23,10 +23,10 @@ import {
 } from "../controllers/product.controller.js";
 
 const ProductRouter = express.Router();
-ProductRouter.post("/TaoSanPhamFull", upload, addFullProduct);
+  ProductRouter.post("/TaoSanPhamFull", upload, addFullProduct);
 
 // ProductRouter.post("/TaoSanPham", addProduct);
-ProductRouter.post("/ThemBienThe/:product_id", addProductVariant);
+ProductRouter.post("/ThemBienThe/:product_id", upload, addProductVariant);
 ProductRouter.post("/ThemSize/:product_id/:color", addSizeToVariant);
 ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
 ProductRouter.get("/LayTatCaSanPhamAdmin", getAllProducts);

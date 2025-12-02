@@ -52,6 +52,10 @@ export default class products extends Model {
           type: DataTypes.JSONB,
           allowNull: true,
         },
+        price: {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+        },
       },
       {
         sequelize,
