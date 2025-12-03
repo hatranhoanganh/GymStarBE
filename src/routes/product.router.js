@@ -1,52 +1,57 @@
 import express from "express";
 import upload from "../utils/multer.js";
 import {
-  addProduct,
   addProductVariant,
   addSizeToVariant,
   getProductByDanhMucCap1,
   getAllProducts,
-  getProductVariants,
-  updateProduct,
-  updateProductVariant,
+  updateFullProduct,
   getActiveProducts,
-    getProductByKeyWordAdmin,
-    getProductByKeyWordUser,
-    addThumbnailProduct,
-    addImageProductByColor,
-    getProductDetailAdmin,
-    getProductDetailUser,
-    updateProductStatus,
-    updateThumbnailProduct,
-    updateImagesProductByColor,
-    addFullProduct,
+  getProductDetail,
+  getProductByKeyWordAdmin,
+  getProductByKeyWordUser,
+  updateProductStatus,
+  addFullProduct,
+  getProductsByStatus,
 } from "../controllers/product.controller.js";
+import { get } from "http";
 
 const ProductRouter = express.Router();
-  ProductRouter.post("/TaoSanPhamFull", upload, addFullProduct);
+const handleUpload = (req, res, next, action) => {
+  upload(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ message: "File vượt quá 5MB" });
+      }
+      return res.status(400).json({ message: err.message });
+    }
+    action(req, res);
+  });
+};
 
-// ProductRouter.post("/TaoSanPham", addProduct);
-ProductRouter.post("/ThemBienThe/:product_id", upload, addProductVariant);
+ProductRouter.post("/TaoSanPhamFull", (req, res) => {
+  handleUpload(req, res, null, addFullProduct);
+});
+ProductRouter.post("/ThemBienThe/:product_id", (req, res) => {
+  handleUpload(req, res, null, addProductVariant);
+});
+ProductRouter.put("/CapNhatSanPham/:product_id", (req, res) => {
+  handleUpload(req, res, null, updateFullProduct);
+});
 ProductRouter.post("/ThemSize/:product_id/:color", addSizeToVariant);
-ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
+ProductRouter.get(
+  "/LaySanPhamTheoDanhMucCap1/:root_id",
+  getProductByDanhMucCap1
+);
 ProductRouter.get("/LayTatCaSanPhamAdmin", getAllProducts);
-ProductRouter.get("/LayBienTheSanPham/:id", getProductVariants);
-ProductRouter.put("/CapNhatSanPham/:id", updateProduct);
-ProductRouter.put("/CapNhatBienThe/:id", updateProductVariant);
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
-ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaAdmin", getProductByKeyWordAdmin);
+ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
+ProductRouter.get(
+  "/LayDanhSachSanPhamTheoTuKhoaAdmin",
+  getProductByKeyWordAdmin
+);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-// ProductRouter.post("/ThemAnhSanPham/:product_id", upload.single("thumbnail"), addThumbnailProduct);
-// ProductRouter.post("/ThemAnhSanPhamTheoMau/:product_id", upload.array("images"), addImageProductByColor);
-ProductRouter.get("/ChiTietSanPhamAdmin/:product_id", getProductDetailAdmin);
-ProductRouter.get("/ChiTietSanPhamUser/:product_id", getProductDetailUser);
 ProductRouter.put("/CapNhatTrangThaiSanPham/:id", updateProductStatus);
-// ProductRouter.put("/CapNhatAnhSanPham/:product_id",upload.single("thumbnail"), updateThumbnailProduct);
-// ProductRouter.put("/CapNhatAnhTheoMau/:product_id", upload.array("images"), updateImagesProductByColor);
-
-
-
-
-
+ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai", getProductsByStatus);
 
 export default ProductRouter;
