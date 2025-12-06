@@ -22,7 +22,11 @@ export default class payments extends Model {
         method: {
           type: DataTypes.STRING(50),
           allowNull: false,
+          validate: {
+            isIn: [["COD", "MOMO", "VNPAY", "ZALO_PAY"]],
+          },
         },
+
         total: {
           type: DataTypes.DECIMAL(11, 2),
           allowNull: false,

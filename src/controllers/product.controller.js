@@ -67,70 +67,125 @@ function sendError(res, files, msg) {
 }
 
 const addFullProduct = async (req, res) => {
+  // === QUẢN LÝ FILE TẠM – XÓA SẠCH TRONG MỌI TRƯỜNG HỢP ===
+  const filesToDelete = new Set();
+
+  const markForDeletion = (path) => {
+    if (path && typeof path === "string") filesToDelete.add(path);
+  };
+
+  const cleanupAllTempFiles = async () => {
+    if (filesToDelete.size === 0) return;
+    for (const path of filesToDelete) {
+      try {
+        await fs.unlink(path);
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          console.error("Lỗi xóa file tạm:", path, err.message);
+        }
+      }
+    }
+    filesToDelete.clear();
+  };
+
+  const sendError = async (msg) => {
+    await cleanupAllTempFiles(); // Luôn dọn dẹp khi validate lỗi
+    return res.status(400).json({ message: msg });
+  };
+
   try {
-    // TRIM AN TOÀN – không crash dù req.body = null/undefined
+    // TRIM AN TOÀN
+    req.files?.forEach(file => markForDeletion(file.path));
     if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
-      Object.keys(req.body).forEach(key => {
+      Object.keys(req.body).forEach((key) => {
         if (typeof req.body[key] === "string") {
           req.body[key] = req.body[key].trim();
         }
       });
     }
 
-    const { name, category_id, description = "", price, discount, spec = "", product_variants } = req.body || {};
+    const {
+      name,
+      category_id,
+      description = "",
+      price,
+      discount,
+      spec = "",
+      product_variants,
+    } = req.body || {};
 
-    // --- Validate product fields ---
-    if (!name) return sendError(res, "Tên sản phẩm không được để trống", req.files);
-    if (!category_id) return sendError(res, "Danh mục không được để trống", req.files);
-    if (!price) return sendError(res, "Giá không được để trống", req.files);
-    // → description và spec được phép để trống
+    // --- VALIDATE CƠ BẢN ---
+    if (!name) return sendError("Tên sản phẩm không được để trống");
+    if (!category_id) return sendError("Danh mục không được để trống");
+    if (!price) return sendError("Giá không được để trống");
 
-    // Tên sản phẩm: giữ nguyên regex cũ của bạn
     if (!/^[a-zA-Z0-9À-ỹ\s]+$/.test(name))
-      return sendError(res, "Tên sản phẩm chỉ được chứa chữ, số và khoảng trắng, không được có ký tự đặc biệt", req.files);
+      return sendError("Tên sản phẩm chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt");
 
     const category = await model.categories.findByPk(category_id);
-    if (!category) return sendError(res, "Danh mục không tồn tại", req.files);
+    if (!category) return sendError("Danh mục không tồn tại");
 
     const existingProduct = await model.products.findOne({ where: { name, category_id } });
-    if (existingProduct) return sendError(res, "Tên sản phẩm đã tồn tại trong danh mục", req.files);
+    if (existingProduct) return sendError("Tên sản phẩm đã tồn tại trong danh mục");
 
     const numPrice = Number(price);
     if (isNaN(numPrice) || numPrice < 40000 || numPrice > 10000000)
-      return sendError(res, "Giá phải từ 40000 -> 10000000", req.files);
+      return sendError("Giá phải từ 40000 -> 10000000");
 
-    // Discount – giữ nguyên logic cũ 100%
+    // --- DISCOUNT (cho phép để trống) ---
     let finalDiscount = 0;
     if (discount !== undefined && discount !== null && discount !== "") {
       const numericDiscount = Number(discount);
-      if (!Number.isInteger(numericDiscount)) {
-        return sendError(res, "Mức giảm giá phải là số nguyên (không chấp nhận số thập phân)", req.files);
-      }
-      if (numericDiscount < 0 || numericDiscount > 99) {
-        return sendError(res, "Mức giảm giá phải từ 0 đến 99%", req.files);
-      }
+      if (!Number.isInteger(numericDiscount))
+        return sendError("Mức giảm giá phải là số nguyên (không chấp nhận số thập phân)");
+      if (numericDiscount < 0 || numericDiscount > 99)
+        return sendError("Mức giảm giá phải từ 0 đến 99%");
       finalDiscount = numericDiscount;
     }
 
-    // DESCRIPTION – được phép để trống, nếu có thì chỉ chữ/số/khoảng trắng (có dấu OK)
-    if (description !== "" && !/^[a-zA-ZÀ-ỹ0-9\s]+$/.test(description)) {
-      return sendError(res, "Mô tả chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt", req.files);
+    // --- DESCRIPTION ---
+    if (description !== "" && !/^[a-zA-ZÀ-ỹ0-9\s]+$/.test(description))
+      return sendError("Mô tả chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt");
+
+    // --- SPEC ---
+    let specArray = [];
+    if (spec && spec.trim() !== "") {
+      try {
+        const parsed = JSON.parse(spec);
+        if (!Array.isArray(parsed)) return sendError("Spec phải là JSON array");
+
+        const forbiddenChars = /[<>;"'\\]/;
+        for (const item of parsed) {
+          if (
+            typeof item !== "object" ||
+            !item.label ||
+            !item.value ||
+            typeof item.label !== "string" ||
+            typeof item.value !== "string"
+          ) {
+            return sendError("Spec phải gồm {label: string, value: string}");
+          }
+          const label = item.label.trim();
+          const value = item.value.trim();
+          if (label === "" || value === "") return sendError("Label và Value spec không được để trống");
+          if (forbiddenChars.test(label) || forbiddenChars.test(value))
+            return sendError("Label/Value spec chứa ký tự không được phép (< > \" ' \\)");
+        }
+        specArray = parsed.map((i) => ({ label: i.label.trim(), value: i.value.trim() }));
+      } catch {
+        return sendError("Spec phải là JSON hợp lệ. Ví dụ: [{\"label\":\"Chất liệu\",\"value\":\"Cotton 100%\"}]");
+      }
     }
 
-    // SPEC – được phép để trống, nếu có thì chỉ chữ/số/khoảng trắng (có dấu OK)
-    if (spec !== "" && !/^[a-zA-ZÀ-ỹ0-9\s]+$/.test(spec)) {
-      return sendError(res, "Đặc tả chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt", req.files);
-    }
-
-    // --- Validate product variants – giữ nguyên 100% logic cũ ---
+    // --- PRODUCT VARIANTS ---
     let variantsArr = [];
     if (product_variants) {
       try { variantsArr = JSON.parse(product_variants); } catch {
-        return sendError(res, "Biến thể phải là JSON hợp lệ", req.files);
+        return sendError("Biến thể phải là JSON hợp lệ");
       }
     }
     if (!Array.isArray(variantsArr) || variantsArr.length === 0)
-      return sendError(res, "Thiếu dữ liệu bắt buộc", req.files);
+      return sendError("Thiếu dữ liệu bắt buộc");
 
     const cleanVariants = [];
     for (const v of variantsArr) {
@@ -138,35 +193,34 @@ const addFullProduct = async (req, res) => {
       const size = v.size?.trim() || null;
       const stock = Number(v.stock);
 
-      if (!color) return sendError(res, "Màu sắc không được để trống", req.files);
+      if (!color) return sendError("Màu sắc không được để trống");
       if (!/^[a-zA-ZÀ-ỹ\s]+$/.test(color))
-        return sendError(res, "Màu sắc chỉ được chứa chữ, không số, không ký tự đặc biệt", req.files);
+        return sendError("Màu sắc chỉ được chứa chữ, không số, không ký tự đặc biệt");
       if (v.stock === undefined || v.stock === null || v.stock === "")
-        return sendError(res, `Số lượng không được để trống cho màu ${color}`, req.files);
+        return sendError(`Số lượng không được để trống cho màu ${color}`);
       if (isNaN(stock) || stock <= 0 || stock > 10000)
-        return sendError(res, `Số lượng phải từ 1 đến 10000 cho màu ${color}`, req.files);
-      if (cleanVariants.some(cv => cv.color === color && cv.size === size))
-        return sendError(res, `Trùng biến thể: ${color} - ${size || "No Size"}`, req.files);
+        return sendError(`Số lượng phải từ 1 đến 10000 cho màu ${color}`);
+      if (cleanVariants.some((cv) => cv.color === color && cv.size === size))
+        return sendError(`Trùng biến thể: ${color} - ${size || "No Size"}`);
 
       cleanVariants.push({ color, size, stock });
     }
 
-    // === Thumbnail & Variant images – giữ nguyên 100% ===
+    // --- FILES VALIDATION ---
     const thumbnailFiles = req.files?.filter((f) => f.fieldname === "thumbnail") || [];
-    if (thumbnailFiles.length === 0) return sendError(res, "Phải upload ảnh thumbnail", req.files);
-    if (thumbnailFiles.length > 1) return sendError(res, "Chỉ được upload 1 ảnh thumbnail", req.files);
+    if (thumbnailFiles.length === 0) return sendError("Phải upload ảnh thumbnail");
+    if (thumbnailFiles.length > 1) return sendError("Chỉ được upload 1 ảnh thumbnail");
     const thumbnailFile = thumbnailFiles[0];
 
     const variantFiles = req.files?.filter((f) => f.fieldname !== "thumbnail") || [];
-    if (variantFiles.length === 0) return sendError(res, "Phải upload ít nhất 1 ảnh variant", req.files);
+    if (variantFiles.length === 0) return sendError("Phải upload ít nhất 1 ảnh variant");
 
+   
+
+    // Map color
     const colorMap = {};
     cleanVariants.forEach((v) => {
-      const key = v.color
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_")
-        .toLowerCase();
+      const key = v.color.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
       colorMap[key] = v.color;
     });
 
@@ -176,37 +230,27 @@ const addFullProduct = async (req, res) => {
       try { fieldName = decodeURIComponent(fieldName); } catch {}
       const match = fieldName.match(/^images\[(.+?)\]\[\]$/);
       if (!match) return;
-      const receivedColor = match[1];
-      const key = receivedColor
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_")
-        .toLowerCase();
+      const key = match[1].normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
       const realColor = colorMap[key];
       if (!realColor) return;
-
       variantFilesByColor[realColor] = variantFilesByColor[realColor] || [];
       variantFilesByColor[realColor].push(file);
     });
 
     for (const v of cleanVariants) {
       const files = variantFilesByColor[v.color] || [];
-      if (files.length === 0) {
-        return sendError(res, `Phải upload ít nhất 1 ảnh cho màu ${v.color}`, req.files);
-      }
-      if (files.length > 20) {
-        return sendError(res, `Màu ${v.color} chỉ được upload tối đa 20 ảnh`, req.files);
-      }
+      if (files.length === 0) return sendError(`Phải upload ít nhất 1 ảnh cho màu ${v.color}`);
+      if (files.length > 10) return sendError(`Màu ${v.color} chỉ được upload tối đa 10 ảnh`);
     }
 
-    // === Tạo sản phẩm & biến thể & upload ảnh – giữ nguyên 100% ===
+    // === TẠO SẢN PHẨM & BIẾN THỂ ===
     const newProduct = await model.products.create({
       name,
       category_id,
       description,
       thumbnail: null,
       discount: finalDiscount,
-      spec,
+      spec: specArray,
       price: numPrice,
       status: "đang bán",
     });
@@ -223,22 +267,20 @@ const addFullProduct = async (req, res) => {
       createdVariants.push(variant);
     }
 
+    // === UPLOAD THUMBNAIL ===
     const thumbResult = await cloudinary.uploader.upload(thumbnailFile.path, {
       folder: `products/${newProduct.product_id}/thumbnail`,
       public_id: `thumb_${Date.now()}`,
     });
     newProduct.thumbnail = thumbResult.secure_url;
     await newProduct.save();
-    await safeUnlink(thumbnailFile.path);
+    markForDeletion(thumbnailFile.path);
 
+    // === UPLOAD VARIANT IMAGES ===
     const imagesByColor = {};
     for (const color of Object.keys(variantFilesByColor)) {
       imagesByColor[color] = [];
-      const folderName = color
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_")
-        .toLowerCase();
+      const folderName = color.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
 
       for (const file of variantFilesByColor[color]) {
         const result = await cloudinary.uploader.upload(file.path, {
@@ -251,7 +293,7 @@ const addFullProduct = async (req, res) => {
           color,
           image: result.secure_url,
         });
-        await safeUnlink(file.path);
+        markForDeletion(file.path);
       }
     }
 
@@ -259,6 +301,9 @@ const addFullProduct = async (req, res) => {
       color,
       images: imagesByColor[color],
     }));
+
+    // Dọn dẹp khi thành công
+    await cleanupAllTempFiles();
 
     return res.status(201).json({
       message: "Tạo sản phẩm thành công",
@@ -269,7 +314,7 @@ const addFullProduct = async (req, res) => {
         thumbnail: newProduct.thumbnail,
         price: newProduct.price,
         discount: newProduct.discount,
-        spec: newProduct.spec,
+        spec: specArray,
         status: newProduct.status,
         category_id,
         category_name: category.name,
@@ -283,38 +328,66 @@ const addFullProduct = async (req, res) => {
         colors: colorsGrouped,
       },
     });
-
   } catch (err) {
-    req.files?.forEach((f) => safeUnlink(f.path));
-    console.error(err);
+    await cleanupAllTempFiles();
+    console.error("Lỗi addFullProduct:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-
-  async function safeUnlink(filePath) {
-    if (!filePath) return;
-    try { await fs.unlink(filePath); } catch {}
-  }
-
-  function sendError(res, msg, files) {
-    files?.forEach((f) => safeUnlink(f.path));
-    return res.status(400).json({ message: msg });
   }
 };
 
-
 const addProductVariant = async (req, res) => {
+  // === QUẢN LÝ FILE TẠM – XÓA SẠCH TRONG MỌI TRƯỜNG HỢP ===
+  const filesToDelete = new Set();
+
+  const markForDeletion = (path) => {
+    if (path && typeof path === "string") filesToDelete.add(path);
+  };
+
+  const cleanupAllTempFiles = async () => {
+    if (filesToDelete.size === 0) return;
+    for (const path of filesToDelete) {
+      try {
+        await fs.unlink(path);
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          console.error("Lỗi xóa file tạm:", path, err.message);
+        }
+      }
+    }
+    filesToDelete.clear();
+  };
+
+  const sendError = async (msg) => {
+    await cleanupAllTempFiles();
+    return res.status(400).json({ message: msg });
+  };
+
   try {
-    Object.keys(req.body).forEach(key => { if (typeof req.body[key] === "string") req.body[key] = req.body[key].trim(); });
+    // === GHI NHỚ TẤT CẢ FILE TẠM NGAY TỪ ĐẦU (BẮT BUỘC!) ===
+    req.files?.forEach(file => markForDeletion(file.path));
+
+    // Trim body
+    Object.keys(req.body).forEach((key) => {
+      if (typeof req.body[key] === "string") req.body[key] = req.body[key].trim();
+    });
 
     const { product_id } = req.params;
-    if (!product_id) return sendError(res, "Thiếu product_id trong URL", req.files);
+    if (!product_id) return sendError("Thiếu product_id trong URL");
 
-    const product = await model.products.findByPk(product_id, { include: [{ model: model.categories, as: "category", attributes: ["name"] }] });
-    if (!product) return sendError(res, "Sản phẩm không tồn tại", req.files);
+    const product = await model.products.findByPk(product_id, {
+      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+    });
+    if (!product) return sendError("Sản phẩm không tồn tại");
 
+    // Parse variants
     let variants = [];
-    try { variants = JSON.parse(req.body.variants); } catch { return sendError(res, "Trường biến thể phải là JSON hợp lệ", req.files); }
-    if (!Array.isArray(variants) || variants.length === 0) return sendError(res, "Danh sách biến thể trống", req.files);
+    try {
+      variants = JSON.parse(req.body.variants);
+    } catch {
+      return sendError("Trường biến thể phải là JSON hợp lệ");
+    }
+    if (!Array.isArray(variants) || variants.length === 0)
+      return sendError("Danh sách biến thể trống");
 
     const cleanVariants = [];
     for (const v of variants) {
@@ -322,54 +395,46 @@ const addProductVariant = async (req, res) => {
       const size = v.size?.trim() || null;
       const stock = Number(v.stock?.toString().trim());
 
-      if (!color) return sendError(res, "Màu sắc không được để trống", req.files);
-      if (!/^[a-zA-ZÀ-ỹ\s]+$/.test(color)) return sendError(res, "Màu sắc chỉ được chứa chữ, không số, không ký tự đặc biệt", req.files);
-      if (v.stock === undefined || v.stock === null || v.stock === "") return sendError(res, `Số lượng không được để trống cho màu ${color}`, req.files);
-      if (isNaN(stock) || stock <= 0 || stock > 10000) return sendError(res, `Số lượng phải từ 1 đến 10000 cho màu ${color}`, req.files);
-      if (cleanVariants.some(cv => cv.color === color && cv.size === size)) return sendError(res, `Trùng biến thể: ${color} - ${size || "No Size"}`, req.files);
+      if (!color) return sendError("Màu sắc không được để trống");
+      if (!/^[a-zA-ZÀ-ỹ\s]+$/.test(color))
+        return sendError("Màu sắc chỉ được chứa chữ, không số, không ký tự đặc biệt");
+      if (v.stock === undefined || v.stock === null || v.stock === "")
+        return sendError(`Số lượng không được để trống cho màu ${color}`);
+      if (isNaN(stock) || stock <= 0 || stock > 10000)
+        return sendError(`Số lượng phải từ 1 đến 10000 cho màu ${color}`);
+      if (cleanVariants.some(cv => cv.color === color && cv.size === size))
+        return sendError(`Trùng biến thể: ${color} - ${size || "No Size"}`);
 
-      const exist = await model.product_variants.findOne({ where: { product_id, color, size } });
-      if (exist) return sendError(res, `Variant màu ${color} size ${size} đã tồn tại`, req.files);
+      const exist = await model.product_variants.findOne({
+        where: { product_id, color, size },
+      });
+      if (exist) return sendError(`Variant màu ${color} size ${size || "No Size"} đã tồn tại`);
 
       cleanVariants.push({ color, size, stock });
     }
 
-    // --- Validate file input ---
-    const variantFiles =
-      req.files?.filter((f) => f.fieldname !== "thumbnail") || [];
-    if (variantFiles.length === 0) {
-      return sendError(res, "Phải upload ít nhất 1 ảnh variant", req.files);
-    }
+    // === KIỂM TRA FILE ẢNH ===
+    const variantFiles = req.files?.filter(f => f.fieldname !== "thumbnail") || [];
+    if (variantFiles.length === 0)
+      return sendError("Phải upload ít nhất 1 ảnh variant");
 
-    // --- Tạo map màu không dấu ---
+    // Map màu không dấu
     const colorMap = {};
-    cleanVariants.forEach((v) => {
-      const key = v.color
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_")
-        .toLowerCase();
+    cleanVariants.forEach(v => {
+      const key = v.color.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
       colorMap[key] = v.color;
     });
 
-    // --- Gom file theo màu ---
+    // Gom file theo màu
     const variantFilesByColor = {};
-    variantFiles.forEach((file) => {
+    variantFiles.forEach(file => {
       let fieldName = file.fieldname.replace(/\+/g, " ");
-      try {
-        fieldName = decodeURIComponent(fieldName);
-      } catch {}
+      try { fieldName = decodeURIComponent(fieldName); } catch {}
 
       const match = fieldName.match(/^images\[(.+?)\]\[\]$/);
       if (!match) return;
 
-      const receivedColor = match[1];
-      const key = receivedColor
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_")
-        .toLowerCase();
-
+      const key = match[1].normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
       const realColor = colorMap[key];
       if (!realColor) return;
 
@@ -377,28 +442,16 @@ const addProductVariant = async (req, res) => {
       variantFilesByColor[realColor].push(file);
     });
 
-    // --- Ràng buộc mỗi màu có ít nhất 1 ảnh, tối đa 20 ảnh ---
+    // Mỗi màu phải có ít nhất 1 ảnh, tối đa 10
     for (const v of cleanVariants) {
       const files = variantFilesByColor[v.color] || [];
       if (files.length === 0)
-        return sendError(
-          res,
-          `Phải upload ít nhất 1 ảnh cho màu ${v.color}`,
-          req.files
-        );
-      if (files.length > 20)
-        return sendError(
-          res,
-          `Màu ${v.color} chỉ được upload tối đa 20 ảnh`,
-          req.files
-        );
+        return sendError(`Phải upload ít nhất 1 ảnh cho màu ${v.color}`);
+      if (files.length > 10)
+        return sendError(`Màu ${v.color} chỉ được upload tối đa 10 ảnh`);
     }
 
-    // ============================
-    //  >>> Tạo DB từ đây
-    // ============================
-
-    // --- Tạo variants ---
+    // === TẠO BIẾN THỂ TRONG DB ===
     const createdVariants = [];
     for (const v of cleanVariants) {
       const sku = buildSKU(product.category.name, product_id, v.color, v.size);
@@ -412,15 +465,11 @@ const addProductVariant = async (req, res) => {
       createdVariants.push(newVar);
     }
 
-    // --- Upload ảnh variant ---
+    // === UPLOAD ẢNH VARIANT ===
     const imagesByColor = {};
     for (const color of Object.keys(variantFilesByColor)) {
       imagesByColor[color] = [];
-
-      const folder = color
-        .normalize("NFD")
-        .replace(/[\u0300-\u036f]/g, "")
-        .replace(/\s+/g, "_");
+      const folder = color.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
 
       for (const file of variantFilesByColor[color]) {
         try {
@@ -437,16 +486,18 @@ const addProductVariant = async (req, res) => {
         } catch (err) {
           console.error("Upload ảnh biến thể lỗi:", err.message);
         } finally {
-          await safeUnlink(file.path);
+          markForDeletion(file.path); // Ghi nhớ để xóa sau
         }
       }
     }
 
-    // --- Format response ---
-    const colorsGrouped = Object.keys(imagesByColor).map((color) => ({
+    const colorsGrouped = Object.keys(imagesByColor).map(color => ({
       color,
       images: imagesByColor[color],
     }));
+
+    // Dọn dẹp khi thành công
+    await cleanupAllTempFiles();
 
     return res.status(201).json({
       message: "Thêm biến thể thành công",
@@ -461,7 +512,7 @@ const addProductVariant = async (req, res) => {
         status: product.status,
         category_id: product.category_id,
         category_name: product.category.name,
-        product_variants: createdVariants.map((v) => ({
+        product_variants: createdVariants.map(v => ({
           product_variant_id: v.product_variant_id,
           color: v.color,
           size: v.size,
@@ -472,45 +523,38 @@ const addProductVariant = async (req, res) => {
       },
     });
   } catch (err) {
-    req.files?.forEach((f) => safeUnlink(f.path));
-    console.error(err);
+    await cleanupAllTempFiles();
+    console.error("Lỗi addProductVariant:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-
-  async function safeUnlink(filePath) {
-    if (!filePath) return;
-    try {
-      await fs.unlink(filePath);
-    } catch (err) {
-      if (err.code !== "ENOENT")
-        console.error("Xóa file tạm lỗi:", err.message);
-    }
-  }
-
-  function sendError(res, msg, files) {
-    files?.forEach((f) => safeUnlink(f.path));
-    return res.status(400).json({ message: msg });
   }
 };
 
 const updateFullProduct = async (req, res) => {
-  // --- Helpers ---
-  async function safeUnlink(filePath) {
-    if (!filePath) return;
-    try { await fs.unlink(filePath); } catch (err) {
-      if (err.code !== "ENOENT") console.error("Xóa file tạm lỗi:", err.message);
+  // === QUẢN LÝ FILE TẠM – XÓA SẠCH TRONG MỌI TRƯỜNG HỢP ===
+  const filesToDelete = new Set();
+
+  const markForDeletion = (path) => {
+    if (path && typeof path === "string") filesToDelete.add(path);
+  };
+
+  const cleanupAllTempFiles = async () => {
+    if (filesToDelete.size === 0) return;
+    for (const path of filesToDelete) {
+      try {
+        await fs.unlink(path);
+      } catch (err) {
+        if (err.code !== "ENOENT") {
+          console.error("Lỗi xóa file tạm:", path, err.message);
+        }
+      }
     }
-  }
+    filesToDelete.clear();
+  };
 
-  async function clearFiles(files) {
-    if (!files || !Array.isArray(files)) return;
-    await Promise.all(files.map(f => safeUnlink(f.path)));
-  }
-
-  async function sendError(msg) {
-    await clearFiles(req.files);
+  const sendError = async (msg) => {
+    await cleanupAllTempFiles();
     return res.status(400).json({ message: msg });
-  }
+  };
 
   function normalizeColor(color) {
     return color
@@ -524,21 +568,23 @@ const updateFullProduct = async (req, res) => {
     const product_id = req.params.product_id;
     if (!product_id) return sendError("Thiếu product_id trong URL");
 
+    // === GHI NHỚ TẤT CẢ FILE TẠM NGAY TỪ ĐẦU (QUAN TRỌNG NHẤT!) ===
+    req.files?.forEach(file => markForDeletion(file.path));
+
     const product = await model.products.findByPk(product_id, {
       include: [{ model: model.categories, as: "category", attributes: ["name"] }],
     });
     if (!product) return sendError("Sản phẩm không tồn tại");
 
-    // FIX 1: Trim an toàn – không lỗi khi req.body = null/undefined
+    // TRIM AN TOÀN
     if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
-      Object.keys(req.body).forEach(key => {
+      Object.keys(req.body).forEach((key) => {
         if (typeof req.body[key] === "string") {
           req.body[key] = req.body[key].trim();
         }
       });
     }
 
-    // FIX 2: Destructuring an toàn
     const {
       name,
       category_id,
@@ -546,10 +592,10 @@ const updateFullProduct = async (req, res) => {
       price,
       discount,
       spec,
-      product_variants
+      product_variants,
     } = req.body || {};
 
-    // === Tên sản phẩm ===
+    // === TÊN SẢN PHẨM ===
     if (name !== undefined) {
       if (!name) return sendError("Tên sản phẩm không được để trống");
       if (!/^[a-zA-Z0-9À-ỹ\s]+$/.test(name))
@@ -559,14 +605,14 @@ const updateFullProduct = async (req, res) => {
         where: {
           name,
           category_id: category_id ?? product.category_id,
-          product_id: { [Op.ne]: product_id }
-        }
+          product_id: { [Op.ne]: product_id },
+        },
       });
       if (exist) return sendError("Tên sản phẩm đã tồn tại trong danh mục");
       product.name = name;
     }
 
-    // === Danh mục ===
+    // === DANH MỤC ===
     if (category_id !== undefined) {
       if (!category_id) return sendError("Danh mục không được để trống");
       const category = await model.categories.findByPk(category_id);
@@ -574,15 +620,14 @@ const updateFullProduct = async (req, res) => {
       product.category_id = category_id;
     }
 
-    // === Mô tả – được phép để trống, nếu có thì chỉ chữ/số/khoảng trắng ===
+    // === MÔ TẢ ===
     if (description !== undefined) {
-      if (description !== "" && !/^[a-zA-Z0-9À-ỹ\s]+$/.test(description)) {
+      if (description !== "" && !/^[a-zA-ZÀ-ỹ0-9\s]+$/.test(description))
         return sendError("Mô tả chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt");
-      }
       product.description = description;
     }
 
-    // === Giá ===
+    // === GIÁ ===
     if (price !== undefined) {
       if (price === "" || price === null) return sendError("Giá không được để trống");
       const numPrice = Number(price);
@@ -591,7 +636,7 @@ const updateFullProduct = async (req, res) => {
       product.price = numPrice;
     }
 
-    // === Discount – chỉ số nguyên 0-99, được bỏ trống ===
+    // === DISCOUNT ===
     if (discount !== undefined && discount !== "") {
       const numDiscount = Number(discount);
       if (!Number.isInteger(numDiscount))
@@ -601,23 +646,45 @@ const updateFullProduct = async (req, res) => {
       product.discount = numDiscount;
     }
 
-    // === Thông số kỹ thuật – được phép để trống ===
-    if (spec !== undefined) {
-      if (spec !== "" && !/^[a-zA-Z0-9À-ỹ\s]+$/.test(spec)) {
-        return sendError("Thông số kỹ thuật chỉ được chứa chữ, số và khoảng trắng, không ký tự đặc biệt");
-      }
-      product.spec = spec;
-    }
+    // === SPEC (mảng JSON) ===
+    let specArray = product.spec || []; // giữ nguyên nếu không gửi
+    if (spec !== undefined && spec !== null) {
+      const specStr = typeof spec === "string" ? spec.trim() : "";
+      if (specStr !== "") {
+        try {
+          const parsed = JSON.parse(specStr);
+          if (!Array.isArray(parsed)) return sendError("Spec phải là một mảng JSON");
 
-    // === Cập nhật stock biến thể ===
+          const forbiddenChars = /[<>;"'\\]/;
+          for (const item of parsed) {
+            if (
+              typeof item !== "object" ||
+              item === null ||
+              typeof item.label !== "string" ||
+              typeof item.value !== "string"
+            ) {
+              return sendError("Mỗi spec phải có {label: string, value: string}");
+            }
+            const label = item.label.trim();
+            const value = item.value.trim();
+            if (label === "" || value === "") return sendError("Label và Value spec không được để trống");
+            if (forbiddenChars.test(label) || forbiddenChars.test(value))
+              return sendError("Label/Value spec chứa ký tự không được phép (< > \" ' \\)");
+          }
+          specArray = parsed.map(i => ({ label: i.label.trim(), value: i.value.trim() }));
+        } catch {
+          return sendError("Spec phải là JSON hợp lệ");
+        }
+      }
+    }
+    product.spec = specArray;
+
+    // === CẬP NHẬT STOCK BIẾN THỂ ===
     if (product_variants !== undefined) {
       let variants = [];
-      try {
-        variants = JSON.parse(product_variants);
-      } catch {
+      try { variants = JSON.parse(product_variants); } catch {
         return sendError("product_variants phải là JSON hợp lệ");
       }
-
       if (!Array.isArray(variants)) return sendError("product_variants phải là mảng");
 
       for (const v of variants) {
@@ -625,7 +692,6 @@ const updateFullProduct = async (req, res) => {
         if (!color) return sendError("Màu sắc biến thể không được để trống");
         if (stock === undefined || stock === null || stock === "")
           return sendError(`Số lượng không được để trống cho màu ${color}`);
-
         const numStock = Number(stock);
         if (isNaN(numStock) || numStock < 0 || numStock > 10000)
           return sendError(`Số lượng phải từ 0 → 10000 cho màu ${color}`);
@@ -637,7 +703,7 @@ const updateFullProduct = async (req, res) => {
       }
     }
 
-    // === Thumbnail ===
+    // === THUMBNAIL ===
     const thumbnailFile = req.files?.find(f => f.fieldname === "thumbnail");
     if (thumbnailFile) {
       if (req.files.filter(f => f.fieldname === "thumbnail").length > 1)
@@ -655,12 +721,12 @@ const updateFullProduct = async (req, res) => {
         public_id: `thumb_${Date.now()}`,
       });
       product.thumbnail = result.secure_url;
-      await safeUnlink(thumbnailFile.path);
+      markForDeletion(thumbnailFile.path);
     }
 
     await product.save();
 
-    // === Variant images ===
+    // === VARIANT IMAGES ===
     const variantFiles = req.files?.filter(f => f.fieldname !== "thumbnail") || [];
     if (variantFiles.length > 0) {
       const existingVariants = await model.product_variants.findAll({ where: { product_id } });
@@ -673,16 +739,14 @@ const updateFullProduct = async (req, res) => {
         try { fieldName = decodeURIComponent(fieldName); } catch {}
         const match = fieldName.match(/^images\[(.+?)\]\[\]$/);
         if (!match) return;
-        const receivedColor = match[1];
-        const realColor = colorMap[normalizeColor(receivedColor)];
+        const realColor = colorMap[normalizeColor(match[1])];
         if (!realColor) return;
-
         filesByColor[realColor] = filesByColor[realColor] || [];
         filesByColor[realColor].push(file);
       });
 
       for (const [color, files] of Object.entries(filesByColor)) {
-        if (files.length > 20) return sendError(`Màu ${color} chỉ được upload tối đa 20 ảnh`);
+        if (files.length > 10) return sendError(`Màu ${color} chỉ được upload tối đa 10 ảnh`);
       }
 
       for (const [color, files] of Object.entries(filesByColor)) {
@@ -696,23 +760,23 @@ const updateFullProduct = async (req, res) => {
 
         for (const file of files) {
           const result = await cloudinary.uploader.upload(file.path, {
-            folder: `products/${product_id}/${folderName}`
+            folder: `products/${product_id}/${folderName}`,
           });
           await model.product_images.create({
             product_id,
             color,
-            image: result.secure_url
+            image: result.secure_url,
           });
-          await safeUnlink(file.path);
+          markForDeletion(file.path);
         }
       }
     }
 
-    // === Response ===
+    // === RESPONSE ===
     const allImages = await model.product_images.findAll({
       where: { product_id },
       attributes: ["color", "image"],
-      raw: true
+      raw: true,
     });
 
     const colorsGrouped = Object.values(
@@ -722,6 +786,8 @@ const updateFullProduct = async (req, res) => {
         return acc;
       }, {})
     );
+
+    await cleanupAllTempFiles(); // Dọn dẹp khi thành công
 
     return res.status(200).json({
       message: "Cập nhật sản phẩm thành công",
@@ -740,15 +806,12 @@ const updateFullProduct = async (req, res) => {
         colors: colorsGrouped,
       },
     });
-
   } catch (err) {
-    await clearFiles(req.files);
+    await cleanupAllTempFiles();
     console.error("Lỗi updateFullProduct:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-
-
 
 const addSizeToVariant = async (req, res) => {
   function sendError(res, msg) {
@@ -789,7 +852,9 @@ const addSizeToVariant = async (req, res) => {
 
     // ====== Kiểm tra product tồn tại ======
     const product = await model.products.findByPk(product_id, {
-      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+      include: [
+        { model: model.categories, as: "category", attributes: ["name"] },
+      ],
     });
     if (!product) return sendError(res, "Sản phẩm không tồn tại");
 
@@ -798,7 +863,10 @@ const addSizeToVariant = async (req, res) => {
       where: { product_id, color: colorTrimmed },
     });
     if (!existingColor) {
-      return sendError(res, `Màu "${colorTrimmed}" chưa tồn tại trong sản phẩm.`);
+      return sendError(
+        res,
+        `Màu "${colorTrimmed}" chưa tồn tại trong sản phẩm.`
+      );
     }
 
     // ====== Kiểm tra size trùng ======
@@ -806,11 +874,19 @@ const addSizeToVariant = async (req, res) => {
       where: { product_id, color: colorTrimmed, size },
     });
     if (sizeExist) {
-      return sendError(res, `Size "${size}" đã tồn tại trong màu "${colorTrimmed}".`);
+      return sendError(
+        res,
+        `Size "${size}" đã tồn tại trong màu "${colorTrimmed}".`
+      );
     }
 
     // ====== Tạo SKU tự động ======
-    const sku = buildSKU(product.category.name, product.product_id, colorTrimmed, size);
+    const sku = buildSKU(
+      product.category.name,
+      product.product_id,
+      colorTrimmed,
+      size
+    );
 
     // ====== Tạo size mới ======
     const newVariant = await model.product_variants.create({
@@ -855,7 +931,6 @@ const addSizeToVariant = async (req, res) => {
   }
 };
 
-
 const getAllChildCategoryIds = (categories, parentId) => {
   let result = [];
 
@@ -880,9 +955,10 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const limit = parseInt(req.query.limit) || 20;
 
     if (!root_id) {
-      return res.status(400).json({ message: "Danh mục cấp 1 không được để trống" });
+      return res
+        .status(400)
+        .json({ message: "Danh mục cấp 1 không được để trống" });
     }
-   
 
     // 1. Kiểm tra danh mục cấp 1
     const rootCategory = await model.categories.findByPk(root_id, {
@@ -910,7 +986,7 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const total = await model.products.count({
       where: { category_id: { [Op.in]: childIds } },
     });
-     if (total === 0) {
+    if (total === 0) {
       return res.status(200).json({
         message: "Chưa có sản phẩm trong danh mục này.",
         total: 0,
@@ -974,7 +1050,8 @@ const getProductByDanhMucCap1 = async (req, res) => {
       // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
-        if (!colors[img.color]) colors[img.color] = { color: img.color, images: [] };
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
         colors[img.color].images.push(img.image);
       });
 
@@ -1018,7 +1095,6 @@ const getProductByDanhMucCap1 = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-
 
 const getAllProducts = async (req, res) => {
   try {
@@ -1092,7 +1168,8 @@ const getAllProducts = async (req, res) => {
       // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
-        if (!colors[img.color]) colors[img.color] = { color: img.color, images: [] };
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
         colors[img.color].images.push(img.image);
       });
 
@@ -1136,9 +1213,6 @@ const getAllProducts = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-
-
-
 
 const getActiveProducts = async (req, res) => {
   try {
@@ -1213,7 +1287,8 @@ const getActiveProducts = async (req, res) => {
       // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
-        if (!colors[img.color]) colors[img.color] = { color: img.color, images: [] };
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
         colors[img.color].images.push(img.image);
       });
 
@@ -1260,8 +1335,6 @@ const getActiveProducts = async (req, res) => {
     });
   }
 };
-
-
 
 const getProductByKeyWordAdmin = async (req, res) => {
   try {
@@ -1316,7 +1389,7 @@ const getProductByKeyWordAdmin = async (req, res) => {
 
     if (total === 0) {
       return res.status(200).json({
-         message: "Không tìm thấy sản phẩm phù hợp",
+        message: "Không tìm thấy sản phẩm phù hợp",
         data: [],
         pagination: { total: 0, page: 1, limit: pageSize, totalPages: 0 },
       });
@@ -1382,8 +1455,8 @@ const getProductByKeyWordAdmin = async (req, res) => {
         thumbnail: p.thumbnail,
         category_id: p.category?.category_id || null,
         category_name: p.category?.name || null,
-        createdAt: p.createdAt,
-        updatedAt: p.updatedAt,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
         product_variants: p.product_variants || [],
         colors: Object.values(colorMap),
       };
@@ -1408,8 +1481,6 @@ const getProductByKeyWordAdmin = async (req, res) => {
   }
 };
 
-
-
 const getProductByKeyWordUser = async (req, res) => {
   try {
     const { keyword = "", page = 1, limit = 10 } = req.query;
@@ -1427,10 +1498,7 @@ const getProductByKeyWordUser = async (req, res) => {
     // 1. Đếm tổng
     const total = await model.products.count({
       where: {
-        [Op.and]: [
-          { status: "đang bán" },
-          searchCondition
-        ]
+        [Op.and]: [{ status: "đang bán" }, searchCondition],
       },
       distinct: true,
       col: "product_id",
@@ -1451,19 +1519,39 @@ const getProductByKeyWordUser = async (req, res) => {
     // 2. Lấy danh sách
     const products = await model.products.findAll({
       attributes: [
-        "product_id", "name", "description", "discount", "price",
-        "spec", "status", "thumbnail", "category_id", "createdAt", "updatedAt"
+        "product_id",
+        "name",
+        "description",
+        "discount",
+        "price",
+        "spec",
+        "status",
+        "thumbnail",
+        "category_id",
+        "createdAt",
+        "updatedAt",
       ],
       where: {
-        [Op.and]: [
-          { status: "đang bán" },
-          searchCondition
-        ]
+        [Op.and]: [{ status: "đang bán" }, searchCondition],
       },
       include: [
-        { model: model.categories, as: "category", attributes: ["category_id", "name"] },
-        { model: model.product_variants, as: "product_variants", attributes: ["product_variant_id", "sku", "color", "size", "stock"], required: false },
-        { model: model.product_images, as: "product_images", attributes: ["product_image_id", "color", "image"], required: false },
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["category_id", "name"],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: ["product_variant_id", "sku", "color", "size", "stock"],
+          required: false,
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
+          required: false,
+        },
       ],
       limit: pageSize,
       offset,
@@ -1472,10 +1560,11 @@ const getProductByKeyWordUser = async (req, res) => {
     });
 
     // 3. Format dữ liệu (giữ nguyên như cũ)
-    const formattedData = products.map(p => {
+    const formattedData = products.map((p) => {
       const colors = {};
-      p.product_images.forEach(img => {
-        if (!colors[img.color]) colors[img.color] = { color: img.color, images: [] };
+      p.product_images.forEach((img) => {
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
         colors[img.color].images.push(img.image);
       });
 
@@ -1502,15 +1591,11 @@ const getProductByKeyWordUser = async (req, res) => {
       data: formattedData,
       pagination: { total, page: validPage, limit: pageSize, totalPages },
     });
-
   } catch (err) {
     console.error("Lỗi getProductByKeyWordUser:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-
-
-
 
 const updateProductStatus = async (req, res) => {
   try {
@@ -1521,7 +1606,9 @@ const updateProductStatus = async (req, res) => {
 
     // Tìm sản phẩm
     const product = await model.products.findByPk(id, {
-      include: [{ model: model.categories, as: "category", attributes: ["name"] }]
+      include: [
+        { model: model.categories, as: "category", attributes: ["name"] },
+      ],
     });
     if (!product) {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
@@ -1677,7 +1764,9 @@ const getProductsByStatus = async (req, res) => {
     const pageSize = parseInt(limit) || 10;
 
     if (!status) {
-      return res.status(400).json({ message: "Vui lòng nhập trạng thái sản phẩm" });
+      return res
+        .status(400)
+        .json({ message: "Vui lòng nhập trạng thái sản phẩm" });
     }
 
     // 1. Đếm tổng sản phẩm
@@ -1730,7 +1819,8 @@ const getProductsByStatus = async (req, res) => {
     const formatted = products.map((p) => {
       const colorMap = {};
       p.product_images.forEach((img) => {
-        if (!colorMap[img.color]) colorMap[img.color] = { color: img.color, images: [] };
+        if (!colorMap[img.color])
+          colorMap[img.color] = { color: img.color, images: [] };
         colorMap[img.color].images.push(img.image);
       });
 
@@ -1769,7 +1859,9 @@ const deleteProduct = async (req, res) => {
 
   try {
     // 1. Tìm sản phẩm
-    const product = await model.products.findByPk(product_id, { transaction: t });
+    const product = await model.products.findByPk(product_id, {
+      transaction: t,
+    });
     if (!product) {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
@@ -1832,12 +1924,12 @@ const deleteProduct = async (req, res) => {
     });
 
     await model.product_variants.destroy({
-      where: { product_id},
+      where: { product_id },
       transaction: t,
     });
 
     await model.products.destroy({
-      where: { product_id},
+      where: { product_id },
       transaction: t,
     });
 
@@ -1847,7 +1939,6 @@ const deleteProduct = async (req, res) => {
       message: "Xóa sản phẩm thành công",
       product_id,
     });
-
   } catch (err) {
     await t.rollback();
     console.error("Lỗi xóa sản phẩm:", err);

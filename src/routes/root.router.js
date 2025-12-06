@@ -5,6 +5,7 @@ import CategoryRouter from "./category.router.js";
 import ProductRouter from "./product.router.js";
 import CartRouter from "./cart.router.js";
 import UserAddressRouter from "./user_address.router.js";
+import OrderRouter from "./order.router.js";
 
 // tạo object router tổng
 const rootRoutes = express.Router();
@@ -15,6 +16,8 @@ rootRoutes.use("/QuanLySanPham", ProductRouter);
 rootRoutes.use("/QuanLyGioHang", CartRouter);
 rootRoutes.use("/QuanLyGioHang", CartRouter);
 rootRoutes.use("/QuanLyDiaChiGiaoHang", UserAddressRouter);
+rootRoutes.use("/QuanLyDonHang", OrderRouter);
+
 
 // // export rootRoutes cho index.js dùng
 export default rootRoutes;
