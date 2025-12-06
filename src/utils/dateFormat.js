@@ -18,30 +18,51 @@ const formatVNDate = (date) => {
   const year = d.getFullYear();
   return `${day}/${month}/${year}`;
 };
-const formatCartItem = (cartItem, userFullName) => {
+const formatCartItem = (cartItem) => {
+  const user = cartItem.user;
+  const role = user?.role;
   const variant = cartItem.product_variant;
-  const product = variant.product;
+  const product = variant?.product;
 
+  const price = parseFloat(product?.price || 0);
   const discount = parseFloat(product?.discount || 0);
-  const price = parseFloat(variant?.price || 0);
   const discountedPrice = price * (1 - discount / 100);
 
   return {
     cart_id: cartItem.cart_id,
-    user_id: String(cartItem.user_id),
-    full_name: userFullName || null,
-    product_variant_id: cartItem.product_variant_id,
-    product_name: product?.name || null,
+
+    // USER
+    user_id: user?.user_id,
+    full_name: user?.full_name,
+    email: user?.email,
+    gender: user?.gender,
+    birth_date: formatVNDate(user?.birth_date),
+    user_status: user?.status,
+    role_id: user?.role_id,
+    role_name: role?.role_name,
+
+    // PRODUCT
+    product_id: product?.product_id,
+    product_name: product?.name,
+    thumbnail: product?.thumbnail,
+    price,
+    discount,
+    discountedPrice,
+
+    // VARIANT
+    product_variant_id: variant?.product_variant_id,
+    color: variant?.color,
+    size: variant?.size,
+    stock: variant?.stock,
+
+    // CART
     quantity: cartItem.quantity,
-    variant: {
-      color: variant?.color,
-      size: variant?.size,
-      price,
-      discount,
-      discountedPrice,
-    },
     createdAt: formatVNDateTime(cartItem.createdAt),
     updatedAt: formatVNDateTime(cartItem.updatedAt),
   };
 };
+
+
+
+
 export { formatVNDateTime , formatVNDate, formatCartItem };

@@ -69,7 +69,7 @@ export const sendVerificationEmail = async (email, token) => {
                             Thời gian hiệu lực
                           </p>
                           <p style="margin: 0; color: #666666; font-size: 14px; line-height: 1.6;">
-                            Link xác nhận này sẽ hết hạn sau <strong style="color: #000000;">15 phút</strong> kể từ khi email được gửi.
+                            Link xác nhận này sẽ hết hạn sau <strong style="color: #000000;">2 phút</strong> kể từ khi email được gửi.
                           </p>
                         </td>
                       </tr>

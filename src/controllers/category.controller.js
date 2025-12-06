@@ -10,19 +10,17 @@ const model = initModels(sequelize);
 const createCategory = async (req, res) => {
   try {
     const { name, parent_id } = req.body;
-
-    if (!name) {
-      return res.status(400).json({ message: "Tên danh mục là bắt buộc" });
-    }
     const cleanName = name.trim();
-
     if (!cleanName) {
-      return res.status(400).json({ message: "Tên danh mục không hợp lệ" });
-    }
-    if (!isNaN(cleanName)) {
-      return res.status(400).json({ message: "Tên danh mục không được là số" });
+      return res.status(400).json({ message: "Tên danh mục không được để trống" });
     }
 
+
+    if (!/^[a-zA-ZÀ-ỹ\s]+$/u.test(cleanName)) {
+  return res.status(400).json({ 
+    message: "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt" 
+  });
+}
     // Nếu parent_id được truyền, kiểm tra xem có tồn tại không
     let validParentId = null;
     if (parent_id) {
@@ -30,7 +28,7 @@ const createCategory = async (req, res) => {
         where: { category_id: parent_id },
       });
       if (!parent) {
-        return res.status(400).json({ message: "Parent_id không hợp lệ" });
+        return res.status(400).json({ message: "Danh mục cha không hợp lệ" });
       }
       validParentId = parent_id;
     }
@@ -43,7 +41,7 @@ const createCategory = async (req, res) => {
     if (existing) {
       return res
         .status(400)
-        .json({ message: "Danh mục đã tồn tại trong cấp này!" });
+        .json({ message: "Tên danh mục đã tồn tại trong cấp này!" });
     }
 
     // Tạo danh mục mới
@@ -139,7 +137,7 @@ const updateCategory = async (req, res) => {
       if (parseInt(parent_id) === parseInt(category_id)) {
         return res
           .status(400)
-          .json({ message: "parent_id không được bằng chính category_id" });
+          .json({ message: "Danh mục cha không được bằng chính danh mục con" });
       }
 
       const childCount = await model.categories.count({
@@ -148,7 +146,7 @@ const updateCategory = async (req, res) => {
       if (childCount > 0 && parent_id !== null) {
         return res.status(400).json({
           message:
-            "Không thể thay đổi parent_id của danh mục đang có danh mục con",
+            "Không thể thay đổi danh mục cha đang có danh mục con",
         });
       }
 
@@ -157,44 +155,46 @@ const updateCategory = async (req, res) => {
           where: { category_id: parent_id },
         });
         if (!parent) {
-          return res.status(400).json({ message: "Parent_id không hợp lệ" });
+          return res.status(400).json({ message: "Danh mục cha không hợp lệ" });
         }
         validParentId = parent_id;
       } else {
         validParentId = null;
       }
     }
+     
+if (name !== undefined) {
+  const cleanName = name?.toString().trim();
 
-    // 3. Xử lý tên
-    if (name) {
-      const cleanName = name.trim();
+  if (!cleanName) {
+    return res.status(400).json({
+      message: "Tên danh mục không được để trống",
+    });
+  }
 
-      if (!cleanName) {
-        return res.status(400).json({ message: "Tên danh mục không hợp lệ" });
-      }
-      if (!isNaN(cleanName)) {
-        return res
-          .status(400)
-          .json({ message: "Tên danh mục không được là số" });
-      }
+  if (!/^[a-zA-ZÀ-ỹ\s]+$/u.test(cleanName)) {
+    return res.status(400).json({
+      message: "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt",
+    });
+  }
 
-      const existing = await model.categories.findOne({
-        where: {
-          name: cleanName,
-          parent_id: validParentId,
-          category_id: { [Op.ne]: category_id },
-        },
-      });
+  // Kiểm tra trùng tên trong cùng cấp
+  const existing = await model.categories.findOne({
+    where: {
+      name: cleanName,
+      parent_id: validParentId,
+      category_id: { [Op.ne]: category_id },
+    },
+  });
 
-      if (existing) {
-        return res
-          .status(400)
-          .json({ message: "Danh mục đã tồn tại trong cấp này" });
-      }
+  if (existing) {
+    return res.status(400).json({
+      message: "Tên danh mục đã tồn tại trong cấp này",
+    });
+  }
 
-      category.name = cleanName;
-    }
-
+  category.name = cleanName;
+}
     category.parent_id = validParentId;
     await category.save();
 

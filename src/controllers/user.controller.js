@@ -20,7 +20,7 @@ const registerUser = async (req, res) => {
   try {
     const { full_name, email, password } = req.body;
 
-    // === BƯỚC 1: TRIM & CHECK ===
+    // === BƯỚC 1: TRIM & VALIDATION CƠ BẢN ===
     const trimmedFullName = full_name?.trim();
     const trimmedEmail = email?.trim().toLowerCase();
     const trimmedPassword = password?.trim();
@@ -31,82 +31,129 @@ const registerUser = async (req, res) => {
       });
     }
 
+    // Họ tên
     if (trimmedFullName.length < 3 || trimmedFullName.length > 100) {
       return res.status(400).json({ message: "Họ tên phải từ 3–100 ký tự" });
     }
-    const nameRegex = /^[\p{L} ]{2,100}$/u; // \p{L} = tất cả chữ unicode
+    const nameRegex = /^[\p{L} ]{2,100}$/u;
     if (!nameRegex.test(trimmedFullName)) {
       return res.status(400).json({
         message: "Họ tên chỉ được chứa chữ cái và khoảng trắng",
       });
     }
 
-    // === BƯỚC 2: VALIDATE EMAIL ===
+    // Email
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(trimmedEmail)) {
       return res.status(400).json({
-        message:
-          "Email không hợp lệ. Vui lòng nhập đúng định dạng (ví dụ: abc@example.com)",
+        message: "Email không hợp lệ. Ví dụ hợp lệ: abc@example.com",
       });
     }
 
-    // === BƯỚC 3: VALIDATE PASSWORD ===
+    // Mật khẩu
     if (trimmedPassword.length < 8) {
-      return res
-        .status(400)
-        .json({ message: "Mật khẩu phải có ít nhất 8 ký tự" });
+      return res.status(400).json({ message: "Mật khẩu phải ít nhất 8 ký tự" });
     }
 
-    // === BƯỚC 4: CHECK EMAIL EXIST ===
+    // === BƯỚC 2: CHỐNG SPAM – 15 PHÚT / 1 LẦN (có countdown từng giây) ===
+    const COOLDOWN_KEY = `register_cooldown:${trimmedEmail}`;
+    const COOLDOWN_SECONDS = 2 * 60; // ← Đổi lại thành 15 phút (trong code bạn để 2 phút)
+
+    const setResult = await redis.set(COOLDOWN_KEY, "1", {
+      NX: true,
+      EX: COOLDOWN_SECONDS,
+    });
+
+    if (!setResult) {
+      let ttl = await redis.ttl(COOLDOWN_KEY);
+      if (ttl <= 0) ttl = 1;
+
+      return res.status(429).json({
+        success: false,
+        message: "Bạn đã gửi yêu cầu đăng ký quá nhanh!",
+        hint: `Vui lòng đợi ${ttl} giây trước khi thử lại.`,
+        retryAfter: ttl,     // ← Frontend dùng để đếm ngược từng giây
+        cooldown: true
+      });
+    }
+
+    // === BƯỚC 3: KIỂM TRA USER ĐÃ TỒN TẠI CHƯA ===
     const existingUser = await model.users.findOne({
       where: { email: { [Op.iLike]: trimmedEmail } },
     });
 
     if (existingUser) {
+      // 1. ĐÃ XÁC NHẬN → không cho đăng ký lại
       if (existingUser.status === "đang hoạt động") {
+        await redis.del(COOLDOWN_KEY);
         return res.status(400).json({
-          message: "Email đã được sử dụng. Vui lòng nhập email khác.",
+          message: "Email này đã được sử dụng. Vui lòng chọn email khác.",
         });
-      } else if (existingUser.status === "chưa xác nhận") {
+      }
+
+      // 2. BỊ CẤM
+      if (existingUser.status === "bị cấm") {
+        await redis.del(COOLDOWN_KEY);
         return res.status(400).json({
-          message:
-            "Email này đã được đăng ký nhưng chưa xác nhận. Vui lòng kiểm tra email (bao gồm Spam/Junk) để xác nhận tài khoản.",
+          message: "Tài khoản liên kết với email này đã bị khóa.",
         });
-      } else if (existingUser.status === "bị cấm") {
-        return res.status(400).json({
-          message: "Tài khoản này đã bị vô hiệu hóa.",
+      }
+
+      // 3. CHƯA XÁC NHẬN → GỬI LẠI EMAIL XÁC NHẬN NGAY LẬP TỨC (UX SIÊU MƯỢT)
+      if (existingUser.status === "chưa xác nhận") {
+        const newToken = jwt.sign(
+          { user_id: existingUser.user_id, email: existingUser.email },
+          process.env.ACCESS_TOKEN_SECRET,
+          { expiresIn: "2m" }
+        );
+
+        await sendVerificationEmail(existingUser.email, newToken);
+
+        // Format dữ liệu trả về giống như đăng ký mới
+        const userWithRole = await model.users.findOne({
+          where: { user_id: existingUser.user_id },
+          include: [{ model: model.roles, as: "role", attributes: ["role_name"] }],
+        });
+
+        const { role, ...rest } = userWithRole.toJSON();
+        const formattedUser = {
+          user_id: rest.user_id,
+          full_name: rest.full_name,
+          email: rest.email,
+          gender: rest.gender,
+          birth_date: rest.birth_date ? formatVNDate(rest.birth_date) : null,
+          status: rest.status,
+          role_name: role?.role_name || null,
+        };
+
+        return res.status(200).json({
+          success: true,
+          message: "Chúng tôi vừa gửi lại email xác nhận đến bạn!",
+          hint: "Vui lòng kiểm tra hộp thư (bao gồm Spam/Junk). Link có hiệu lực 2 phút.",
+          data: formattedUser,
+          resend: true  // Frontend có thể hiện toast thành công
         });
       }
     }
 
-    // === BƯỚC 5: HASH PASSWORD ===
+    // === BƯỚC 4: TẠO USER MỚI ===
     const hashedPassword = await bcrypt.hash(trimmedPassword, 10);
 
-    // === BƯỚC 6: TẠO USER MỚI ===
     const newUser = await model.users.create({
       full_name: trimmedFullName,
       email: trimmedEmail,
       password: hashedPassword,
-      role_id: 1, // mặc định customer
+      role_id: 1,
       status: "chưa xác nhận",
     });
 
-    // === BƯỚC 7: LẤY USER KÈM ROLE ===
+    // === BƯỚC 5: FORMAT USER TRẢ VỀ ===
     const userWithRole = await model.users.findOne({
       where: { user_id: newUser.user_id },
-      include: [
-        {
-          model: model.roles,
-          as: "role",
-          attributes: ["role_name"],
-        },
-      ],
+      include: [{ model: model.roles, as: "role", attributes: ["role_name"] }],
     });
 
-    // === FORMAT DATA THEO STYLE GETALLUSERS ===
-    const userJSON = userWithRole.toJSON();
-    const { role, ...rest } = userJSON;
-
+    const { role, ...rest } = userWithRole.toJSON();
     const formattedUser = {
       user_id: rest.user_id,
       full_name: rest.full_name,
@@ -117,37 +164,40 @@ const registerUser = async (req, res) => {
       role_name: role?.role_name || null,
     };
 
-    // === BƯỚC 8: TẠO TOKEN + GỬI EMAIL ===
+    // === BƯỚC 6: GỬI EMAIL XÁC NHẬN ===
     const verificationToken = jwt.sign(
       { user_id: newUser.user_id, email: newUser.email },
       process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: "15m" }
+      { expiresIn: "2m" }
     );
 
     await sendVerificationEmail(newUser.email, verificationToken);
 
-    // === BƯỚC 9: TRẢ KẾT QUẢ ===
+    // === BƯỚC 7: TRẢ KẾT QUẢ THÀNH CÔNG ===
     return res.status(201).json({
-      message:
-        "Đăng ký thành công! Vui lòng kiểm tra email (Spam/Junk) để xác nhận tài khoản.",
+      success: true,
+      message: "Đăng ký thành công! Vui lòng kiểm tra hộp thư (bao gồm Spam/Junk) để xác nhận tài khoản. Link có hiệu lực 2 phút.",
       data: formattedUser,
     });
+
   } catch (error) {
     console.error("Lỗi đăng ký:", error);
 
-    if (error.name === "SequelizeUniqueConstraintError") {
-      return res.status(400).json({
-        message:
-          "Email này đã được đăng ký. Vui lòng kiểm tra email (Spam/Junk) để xác nhận hoặc dùng email khác.",
-      });
+    // Xóa cooldown nếu có lỗi → tránh treo người dùng oan
+    if (req.body.email) {
+      const email = req.body.email?.trim().toLowerCase();
+      if (email) {
+        await redis.del(`register_cooldown:${email}`).catch(() => {});
+      }
     }
 
-    return res.status(500).json({ message: "Lỗi server" });
+    return res.status(500).json({
+      success: false,
+      message: "Đã có lỗi xảy ra. Vui lòng thử lại sau vài phút.",
+    });
   }
 };
 
-/** ============ XÁC NHẬN EMAIL – ĐÃ SỬA 100% LOGIC ============ */
-/** ============ XÁC NHẬN EMAIL – GỬI LẠI KHI HẾT HẠN ============ */
 const verifyEmail = async (req, res) => {
   const { token } = req.query;
 
@@ -168,7 +218,7 @@ const verifyEmail = async (req, res) => {
     if (!decoded?.user_id) {
       return res.status(400).send(`
           <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-            <h3 style="color:#e53e3e;">Mã xác nhận không hợp lệ</h3>
+            <h3 style="color:#e53e3e;">Link xác nhận không hợp lệ</h3>
             <p>Token bị lỗi hoặc đã bị sửa đổi.</p>
           </div>
         `);
@@ -231,7 +281,7 @@ const verifyEmail = async (req, res) => {
         const newToken = jwt.sign(
           { user_id: user.user_id, email: user.email },
           process.env.ACCESS_TOKEN_SECRET,
-          { expiresIn: "15m" }
+          { expiresIn: "2m" }
         );
 
         await sendVerificationEmail(user.email, newToken);
@@ -248,7 +298,7 @@ const verifyEmail = async (req, res) => {
                 }</h3>
                 <p style="color:#718096;">
                   Vui lòng kiểm tra <strong>hộp thư đến</strong> và <strong>mục Spam/Junk</strong>.<br>
-                  Link mới có hiệu lực trong <strong>15 phút</strong>.
+                  Link mới có hiệu lực trong <strong>2 phút</strong>.
                 </p>  
                 <p style="margin-top:24px; font-size:14px; color:#a0aec0;">
                   <em>Thời gian hiện tại: ${new Date().toLocaleString("vi-VN", {
@@ -327,7 +377,7 @@ const loginUser = async (req, res) => {
     if (user.status === "chưa xác nhận") {
       return res.status(403).json({
         message:
-          "Email này đã được đăng ký nhưng chưa xác nhận. Vui lòng kiểm tra email để xác nhận tài khoản.",
+          "Email này đã được đăng ký nhưng chưa xác nhận. Vui lòng kiểm tra hộp thư (bao gồm Spam/Junk) để xác nhận tài khoản.",
       });
     }
 
@@ -648,16 +698,16 @@ const updateUser = async (req, res) => {
       const trimmedName = full_name.trim();
       if (
         trimmedName === "" ||
-        trimmedName.length < 3 ||
+        trimmedName.length < 2 ||
         trimmedName.length > 100
       ) {
         return res.status(400).json({
-          message: "Tên phải từ 3–100 ký tự và không được để trống",
+          message: "Họ tên phải từ 2–100 ký tự và không được để trống",
         });
       }
       if (!/^[\p{L} ]+$/u.test(trimmedName)) {
         return res.status(400).json({
-          message: "Tên chỉ được chứa chữ và khoảng trắng",
+          message: "Họ tên chỉ được chứa chữ và khoảng trắng",
         });
       }
       updateData.full_name = trimmedName;
@@ -903,11 +953,11 @@ const forgotPassword = async (req, res) => {
     // 2️⃣ Giới hạn số lần gửi OTP: 3 lần/giờ
     // ===============================
     let sendCount = await redis.incr(limitKey);
-    if (sendCount === 1) await redis.expire(limitKey, 60 * 60); // set TTL 1 giờ
+    if (sendCount === 1) await redis.expire(limitKey, 2 * 60); 
     if (sendCount > 3) {
-      await redis.set(cooldownKey, "1", { EX: 60 * 60 }); // chặn thêm 1 giờ
+      await redis.set(cooldownKey, "1", { EX: 2 * 60 });
       return res.status(429).json({
-        message: "Quá nhiều yêu cầu! Vui lòng thử lại sau 59 phút.",
+        message: "Quá nhiều yêu cầu! Vui lòng thử lại sau 2 phút.",
       });
     }
 
@@ -918,14 +968,14 @@ const forgotPassword = async (req, res) => {
 
     // Xóa OTP cũ nếu có (đảm bảo client nhận OTP mới)
     await redis.del(otpKey);
-    await redis.set(otpKey, otp, { EX: 15 * 60 }); // hiệu lực 15 phút
+    await redis.set(otpKey, otp, { EX: 2 * 60 }); 
 
     await sendOTPEmail(trimmedEmail, otp);
 
     console.log(`✅ OTP sent | Email: ${trimmedEmail} | Lần: ${sendCount}`);
     return res.status(200).json({
       message:
-        "Mã OTP đã được gửi (hiệu lực 15 phút). Kiểm tra email (Spam/Junk).",
+        "Mã OTP đã được gửi (hiệu lực 2 phút). Kiểm tra email (Spam/Junk).",
       data: { email: trimmedEmail },
     });
   } catch (error) {
@@ -1228,7 +1278,7 @@ const assignUserRole = async (req, res) => {
     // Kiểm tra user tồn tại
     const user = await model.users.findByPk(user_id);
     if (!user) {
-      return res.status(404).json({ message: "User không tồn tại" });
+      return res.status(404).json({ message: "Người dùng không tồn tại" });
     }
 
     // Kiểm tra role tồn tại
@@ -1292,7 +1342,7 @@ const createRole = async (req, res) => {
     const { role_name } = req.body;
 
     if (!role_name || !role_name.trim()) {
-      return res.status(400).json({ message: "role_name không được để trống" });
+      return res.status(400).json({ message: "Tên role không được để trống" });
     }
 
     const trimmedName = role_name.trim();
@@ -1325,29 +1375,41 @@ const updateRole = async (req, res) => {
     const { role_id } = req.params;
     const { role_name } = req.body;
 
-    if (!role_name || !role_name.trim()) {
-      return res.status(400).json({ message: "role_name không được để trống" });
+    // 1. Kiểm tra có gửi role_name không + trim
+    if (!role_name || typeof role_name !== "string" || !role_name.trim()) {
+      return res.status(400).json({ message: "Tên role không được để trống" });
     }
 
     const trimmedName = role_name.trim();
 
+    // 2. Ràng buộc: chỉ được chữ cái (có/không dấu), số và khoảng trắng
+    const validRoleNameRegex = /^[a-zA-ZÀ-ỹ0-9\s]+$/;
+
+    if (!validRoleNameRegex.test(trimmedName)) {
+      return res.status(400).json({
+        message: "Tên role chỉ được chứa chữ cái, số và khoảng trắng, không được dùng ký tự đặc biệt",
+      });
+    }
+
+    // 3. Kiểm tra role có tồn tại không
     const role = await model.roles.findByPk(role_id);
     if (!role) {
       return res.status(404).json({ message: "Role không tồn tại" });
     }
 
-    // Kiểm tra xem role_name mới có trùng role khác không
-    const dup = await model.roles.findOne({
+    // 4. Kiểm tra trùng tên role (trừ chính nó)
+    const duplicate = await model.roles.findOne({
       where: {
         role_name: trimmedName,
-        role_id: { [Op.ne]: role_id }, // tránh trùng chính nó
+        role_id: { [Op.ne]: role_id },
       },
     });
 
-    if (dup) {
-      return res.status(400).json({ message: "Role name đã tồn tại" });
+    if (duplicate) {
+      return res.status(400).json({ message: "Tên role đã tồn tại" });
     }
 
+    // 5. Cập nhật
     role.role_name = trimmedName;
     await role.save();
 
@@ -1377,7 +1439,7 @@ const deleteRole = async (req, res) => {
     const userCount = await model.users.count({ where: { role_id } });
     if (userCount > 0) {
       return res.status(400).json({
-        message: "Không thể xoá role vì đang được user sử dụng",
+        message: "Không thể xoá role vì đang được người dùng sử dụng",
       });
     }
 

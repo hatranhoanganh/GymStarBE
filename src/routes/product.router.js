@@ -13,8 +13,9 @@ import {
   updateProductStatus,
   addFullProduct,
   getProductsByStatus,
+  deleteProduct,
 } from "../controllers/product.controller.js";
-import { get } from "http";
+
 
 const ProductRouter = express.Router();
 const handleUpload = (req, res, next, action) => {
@@ -53,5 +54,5 @@ ProductRouter.get(
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
 ProductRouter.put("/CapNhatTrangThaiSanPham/:id", updateProductStatus);
 ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai", getProductsByStatus);
-
+ProductRouter.delete("/XoaSanPham/:product_id", deleteProduct);
 export default ProductRouter;
