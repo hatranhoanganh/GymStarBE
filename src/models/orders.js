@@ -38,6 +38,7 @@ export default class orders extends Model {
                 "đã giao",
                 "giao thất bại",
                 "đã hủy",
+                "đổi hàng",
               ],
             ],
           },

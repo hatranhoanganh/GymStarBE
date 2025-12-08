@@ -36,6 +36,10 @@ export default class order_details extends Model {
           type: DataTypes.DECIMAL(10, 2),
           allowNull: false,
         },
+        original_price: {                    
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: true,
+        },
       },
       {
         sequelize,

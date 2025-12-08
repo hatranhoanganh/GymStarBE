@@ -58,10 +58,10 @@ export default function initModels(sequelize) {
   orders.hasMany(order_details, { as: "order_details", foreignKey: "order_id" });
 
   payments.belongsTo(orders, { as: "order", foreignKey: "order_id" });
-  orders.hasMany(payments, { as: "payments", foreignKey: "order_id" });
+  orders.hasOne(payments, { as: "payment", foreignKey: "order_id" });
 
   reason_cancel.belongsTo(orders, { as: "order", foreignKey: "order_id" });
-  orders.hasMany(reason_cancel, { as: "reason_cancels", foreignKey: "order_id" });
+  orders.hasOne(reason_cancel, { as: "reason_cancel", foreignKey: "order_id" });
 
   carts.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
   product_variants.hasMany(carts, { as: "carts", foreignKey: "product_variant_id" });
