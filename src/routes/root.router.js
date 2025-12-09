@@ -7,6 +7,7 @@ import CartRouter from "./cart.router.js";
 import UserAddressRouter from "./user_address.router.js";
 import OrderRouter from "./order.router.js";
 import PaymentRouter from "./payment.router.js";
+import MoMoRouter from "./momo.router.js";
 
 // tạo object router tổng
 const rootRoutes = express.Router();
@@ -19,6 +20,7 @@ rootRoutes.use("/QuanLyGioHang", CartRouter);
 rootRoutes.use("/QuanLyDiaChiGiaoHang", UserAddressRouter);
 rootRoutes.use("/QuanLyDonHang", OrderRouter);
 rootRoutes.use("/QuanLyThanhToan", PaymentRouter);
+rootRoutes.use("/MoMo", MoMoRouter);
 
 
 // // export rootRoutes cho index.js dùng

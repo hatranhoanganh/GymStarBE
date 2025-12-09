@@ -5,10 +5,11 @@ import { getAllPayments,
 
 
  } from "../controllers/payment.controller.js";
+ 
 
 const PaymentRouter = express.Router();
 
-// CartRouter.post("/ThemSanPhamVaoGioHang/:user_id", addToCart);
+
 PaymentRouter.get("/LayDanhSachTatCaThanhToan", getAllPayments);
 // CartRouter.put("/CapNhatSoLuongGioHang1/:user_id", updateCartQuantity);
 // CartRouter.put("/CapNhatSoLuongGioHang2/:user_id", setCartQuantity);

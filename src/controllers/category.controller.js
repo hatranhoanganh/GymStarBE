@@ -12,16 +12,18 @@ const createCategory = async (req, res) => {
     const { name, parent_id } = req.body;
     const cleanName = name.trim();
     if (!cleanName) {
-      return res.status(400).json({ message: "Tên danh mục không được để trống" });
+      return res
+        .status(400)
+        .json({ message: "Tên danh mục không được để trống" });
     }
 
-
     if (!/^[a-zA-ZÀ-ỹ\s]+$/u.test(cleanName)) {
-  return res.status(400).json({ 
-    message: "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt" 
-  });
-}
-    // Nếu parent_id được truyền, kiểm tra xem có tồn tại không
+      return res.status(400).json({
+        message:
+          "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt",
+      });
+    }
+
     let validParentId = null;
     if (parent_id) {
       const parent = await model.categories.findOne({
@@ -33,7 +35,6 @@ const createCategory = async (req, res) => {
       validParentId = parent_id;
     }
 
-    // Kiểm tra danh mục trùng tên trong cùng cấp
     const existing = await model.categories.findOne({
       where: { name: cleanName, parent_id: validParentId },
     });
@@ -44,10 +45,9 @@ const createCategory = async (req, res) => {
         .json({ message: "Tên danh mục đã tồn tại trong cấp này!" });
     }
 
-    // Tạo danh mục mới
     const newCategory = await model.categories.create({
       name: cleanName,
-      parent_id: validParentId, // null nếu là danh mục cha
+      parent_id: validParentId,
     });
 
     return res.status(201).json({
@@ -118,10 +118,9 @@ const getAllCategories = async (req, res) => {
 
 const updateCategory = async (req, res) => {
   try {
-    const { category_id } = req.params; // đổi từ id -> category_id
+    const { category_id } = req.params;
     const { name, parent_id } = req.body;
 
-    // 1. Tìm category cần update
     const category = await model.categories.findOne({
       where: { category_id },
     });
@@ -132,7 +131,6 @@ const updateCategory = async (req, res) => {
 
     let validParentId = category.parent_id;
 
-    // 2. Xử lý parent_id nếu người dùng gửi
     if (parent_id !== undefined) {
       if (parseInt(parent_id) === parseInt(category_id)) {
         return res
@@ -145,8 +143,7 @@ const updateCategory = async (req, res) => {
       });
       if (childCount > 0 && parent_id !== null) {
         return res.status(400).json({
-          message:
-            "Không thể thay đổi danh mục cha đang có danh mục con",
+          message: "Không thể thay đổi danh mục cha đang có danh mục con",
         });
       }
 
@@ -162,39 +159,39 @@ const updateCategory = async (req, res) => {
         validParentId = null;
       }
     }
-     
-if (name !== undefined) {
-  const cleanName = name?.toString().trim();
 
-  if (!cleanName) {
-    return res.status(400).json({
-      message: "Tên danh mục không được để trống",
-    });
-  }
+    if (name !== undefined) {
+      const cleanName = name?.toString().trim();
 
-  if (!/^[a-zA-ZÀ-ỹ\s]+$/u.test(cleanName)) {
-    return res.status(400).json({
-      message: "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt",
-    });
-  }
+      if (!cleanName) {
+        return res.status(400).json({
+          message: "Tên danh mục không được để trống",
+        });
+      }
 
-  // Kiểm tra trùng tên trong cùng cấp
-  const existing = await model.categories.findOne({
-    where: {
-      name: cleanName,
-      parent_id: validParentId,
-      category_id: { [Op.ne]: category_id },
-    },
-  });
+      if (!/^[a-zA-ZÀ-ỹ\s]+$/u.test(cleanName)) {
+        return res.status(400).json({
+          message:
+            "Tên danh mục chỉ được chứa chữ cái và khoảng trắng, không được chứa số hoặc ký tự đặc biệt",
+        });
+      }
 
-  if (existing) {
-    return res.status(400).json({
-      message: "Tên danh mục đã tồn tại trong cấp này",
-    });
-  }
+      const existing = await model.categories.findOne({
+        where: {
+          name: cleanName,
+          parent_id: validParentId,
+          category_id: { [Op.ne]: category_id },
+        },
+      });
 
-  category.name = cleanName;
-}
+      if (existing) {
+        return res.status(400).json({
+          message: "Tên danh mục đã tồn tại trong cấp này",
+        });
+      }
+
+      category.name = cleanName;
+    }
     category.parent_id = validParentId;
     await category.save();
 
@@ -229,7 +226,6 @@ const deleteCategory = async (req, res) => {
       return res.status(404).json({ message: "Danh mục không tồn tại" });
     }
 
-    // Kiểm tra có con
     const childCount = await model.categories.count({
       where: { parent_id: id },
     });
@@ -239,7 +235,6 @@ const deleteCategory = async (req, res) => {
         .json({ message: "Không thể xóa danh mục có danh mục con" });
     }
 
-    // Kiểm tra có sản phẩm liên quan
     const productCount = await model.products.count({
       where: { category_id: id },
     });
@@ -265,14 +260,12 @@ const getCategoryByKeyWord = async (req, res) => {
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
 
-    // Điều kiện tìm kiếm
     const where = keyword
       ? {
           name: { [Op.iLike]: `%${keyword}%` },
         }
       : {};
 
-    // Đếm tổng số bản ghi
     const total = await model.categories.count({ where });
 
     if (total === 0) {
@@ -288,14 +281,11 @@ const getCategoryByKeyWord = async (req, res) => {
       });
     }
 
-    // Tính tổng số trang
     const totalPages = Math.ceil(total / pageSize);
 
-    // Ép page không vượt quá totalPages
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    // Lấy danh sách danh mục
     const rows = await model.categories.findAll({
       where,
       limit: pageSize,
@@ -303,7 +293,6 @@ const getCategoryByKeyWord = async (req, res) => {
       order: [["category_id", "ASC"]],
     });
 
-    // Format dữ liệu
     const formattedData = rows.map((cat) => ({
       category_id: cat.category_id,
       name: cat.name,
@@ -330,14 +319,12 @@ const getCategoryByKeyWord = async (req, res) => {
 
 const getCategoryCap1 = async (req, res) => {
   try {
-    // Lấy các category cha
     const parentCategories = await model.categories.findAll({
       where: { parent_id: null },
       attributes: ["category_id", "name", "createdAt", "updatedAt"],
-      order: [["name", "ASC"]], // sắp xếp theo tên
+      order: [["name", "ASC"]],
     });
 
-    // Format dữ liệu
     const formattedCategories = parentCategories.map((cat) => ({
       category_id: cat.category_id,
       name: cat.name,
@@ -360,19 +347,17 @@ const getCategoryCap1 = async (req, res) => {
 
 const getCategoryCap3LocCap1 = async (req, res) => {
   try {
-    const { root_id } = req.params; // root_id từ URL
+    const { root_id } = req.params;
 
     if (!root_id) {
       return res.status(400).json({ message: "Nhập thêm root_id" });
     }
 
-    // Lấy danh mục root
     const rootCategory = await model.categories.findByPk(root_id);
     if (!rootCategory) {
       return res.status(404).json({ message: "Root_id không tồn tại" });
     }
 
-    // Lấy các danh mục cấp 2 (con của root)
     const level2Categories = await model.categories.findAll({
       where: { parent_id: root_id },
       attributes: ["category_id", "name"],
@@ -387,7 +372,6 @@ const getCategoryCap3LocCap1 = async (req, res) => {
 
     const level2Ids = level2Categories.map((cat) => cat.category_id);
 
-    // Lấy danh mục cấp 3 (con của cấp 2)
     const level3Categories = await model.categories.findAll({
       where: { parent_id: level2Ids },
       attributes: [
@@ -401,7 +385,6 @@ const getCategoryCap3LocCap1 = async (req, res) => {
       raw: true,
     });
 
-    // Format dữ liệu kiểu formatData
     const formattedData = level3Categories.map((cat) => {
       const parent = level2Categories.find(
         (p) => p.category_id === cat.parent_id

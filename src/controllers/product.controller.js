@@ -46,25 +46,25 @@ const buildSKU = (categoryName, productId, color, size) => {
   return sku;
 };
 
-async function safeUnlink(filePath) {
-  if (!filePath) return;
-  try {
-    await fs.unlink(filePath);
-  } catch (err) {
-    if (err.code !== "ENOENT") console.error("Xóa file tạm lỗi:", err.message);
-  }
-}
+// async function safeUnlink(filePath) {
+//   if (!filePath) return;
+//   try {
+//     await fs.unlink(filePath);
+//   } catch (err) {
+//     if (err.code !== "ENOENT") console.error("Xóa file tạm lỗi:", err.message);
+//   }
+// }
 
-async function clearFiles(files) {
-  if (!files) return;
-  for (const f of files) {
-    await safeUnlink(f.path);
-  }
-}
+// async function clearFiles(files) {
+//   if (!files) return;
+//   for (const f of files) {
+//     await safeUnlink(f.path);
+//   }
+// }
 
-function sendError(res, files, msg) {
-  return clearFiles(files).then(() => res.status(400).json({ message: msg }));
-}
+// function sendError(res, files, msg) {
+//   return clearFiles(files).then(() => res.status(400).json({ message: msg }));
+// }
 
 const addFullProduct = async (req, res) => {
   const filesToDelete = new Set();
@@ -95,10 +95,8 @@ const addFullProduct = async (req, res) => {
   const t = await sequelize.transaction();
 
   try {
-    // ĐÁNH DẤU FILE NGAY TỪ ĐẦU → LUÔN XÓA KHI LỖI
     req.files?.forEach((file) => markForDeletion(file.path));
 
-    // Trim body
     if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
       Object.keys(req.body).forEach((key) => {
         if (typeof req.body[key] === "string") {
@@ -117,7 +115,6 @@ const addFullProduct = async (req, res) => {
       product_variants,
     } = req.body || {};
 
-    // === VALIDATE CƠ BẢN ===
     if (!name) return sendError("Tên sản phẩm không được để trống");
     if (!category_id) return sendError("Danh mục không được để trống");
     if (!price) return sendError("Giá không được để trống");
@@ -160,7 +157,6 @@ const addFullProduct = async (req, res) => {
       );
     }
 
-    // === SPEC ===
     let specArray = [];
     if (spec && spec.trim() !== "") {
       try {
@@ -194,7 +190,6 @@ const addFullProduct = async (req, res) => {
       }
     }
 
-    // === PRODUCT VARIANTS ===
     let variantsArr = [];
     if (product_variants) {
       try {
@@ -216,13 +211,11 @@ const addFullProduct = async (req, res) => {
       if (!/^[a-zA-ZÀ-ỹ\s]+$/.test(color))
         return sendError("Màu sắc chỉ được chứa chữ và khoảng trắng");
 
-      // CHẶN CHẾT "null" DẠNG CHUỖI – CHỈ CHẤP NHẬN ENUM HOẶC ĐỂ TRỐNG/NULL
       let size = null;
 
       if (v.size !== undefined && v.size !== null) {
         const raw = String(v.size).trim();
 
-        // CHẶN "null", "Null", "NULL", " null "...
         if (/^null$/i.test(raw)) {
           return sendError(
             `Không được gửi "null" dưới dạng chuỗi cho size. Chỉ chấp nhận: ${VALID_SIZES.join(
@@ -242,9 +235,7 @@ const addFullProduct = async (req, res) => {
           }
           size = upper;
         }
-        // raw === '' → size = null → hợp lệ
       }
-      // v.size === null hoặc không gửi field → size = null → hợp lệ
 
       const stock = Number(v.stock);
       if (isNaN(stock) || stock <= 0 || stock > 10000)
@@ -260,7 +251,6 @@ const addFullProduct = async (req, res) => {
       cleanVariants.push({ color, size, stock });
     }
 
-    // === FILE VALIDATION ===
     const thumbnailFiles =
       req.files?.filter((f) => f.fieldname === "thumbnail") || [];
     if (thumbnailFiles.length !== 1)
@@ -308,7 +298,6 @@ const addFullProduct = async (req, res) => {
         return sendError(`Màu ${v.color} chỉ được upload tối đa 10 ảnh`);
     }
 
-    // === TẠO SẢN PHẨM ===
     const newProduct = await model.products.create(
       {
         name,
@@ -338,7 +327,6 @@ const addFullProduct = async (req, res) => {
       createdVariants.push(variant);
     }
 
-    // Upload ảnh
     const thumbResult = await cloudinary.uploader.upload(
       thumbnailFiles[0].path,
       {
@@ -425,7 +413,6 @@ const addFullProduct = async (req, res) => {
 };
 
 const addProductVariant = async (req, res) => {
-  // === QUẢN LÝ FILE TẠM – XÓA SẠCH TRONG MỌI TRƯỜNG HỢP ===
   const filesToDelete = new Set();
 
   const markForDeletion = (path) => {
@@ -452,10 +439,8 @@ const addProductVariant = async (req, res) => {
   };
 
   try {
-    // === GHI NHỚ TẤT CẢ FILE TẠM NGAY TỪ ĐẦU (BẮT BUỘC!) ===
     req.files?.forEach((file) => markForDeletion(file.path));
 
-    // Trim body
     Object.keys(req.body).forEach((key) => {
       if (typeof req.body[key] === "string")
         req.body[key] = req.body[key].trim();
@@ -471,7 +456,6 @@ const addProductVariant = async (req, res) => {
     });
     if (!product) return sendError("Sản phẩm không tồn tại");
 
-    // Parse variants
     let variants = [];
     try {
       variants = JSON.parse(req.body.variants);
@@ -510,13 +494,11 @@ const addProductVariant = async (req, res) => {
       cleanVariants.push({ color, size, stock });
     }
 
-    // === KIỂM TRA FILE ẢNH ===
     const variantFiles =
       req.files?.filter((f) => f.fieldname !== "thumbnail") || [];
     if (variantFiles.length === 0)
       return sendError("Phải upload ít nhất 1 ảnh variant");
 
-    // Map màu không dấu
     const colorMap = {};
     cleanVariants.forEach((v) => {
       const key = v.color
@@ -527,7 +509,6 @@ const addProductVariant = async (req, res) => {
       colorMap[key] = v.color;
     });
 
-    // Gom file theo màu
     const variantFilesByColor = {};
     variantFiles.forEach((file) => {
       let fieldName = file.fieldname.replace(/\+/g, " ");
@@ -550,7 +531,6 @@ const addProductVariant = async (req, res) => {
       variantFilesByColor[realColor].push(file);
     });
 
-    // Mỗi màu phải có ít nhất 1 ảnh, tối đa 10
     for (const v of cleanVariants) {
       const files = variantFilesByColor[v.color] || [];
       if (files.length === 0)
@@ -559,7 +539,6 @@ const addProductVariant = async (req, res) => {
         return sendError(`Màu ${v.color} chỉ được upload tối đa 10 ảnh`);
     }
 
-    // === TẠO BIẾN THỂ TRONG DB ===
     const createdVariants = [];
     for (const v of cleanVariants) {
       const sku = buildSKU(product.category.name, product_id, v.color, v.size);
@@ -573,7 +552,6 @@ const addProductVariant = async (req, res) => {
       createdVariants.push(newVar);
     }
 
-    // === UPLOAD ẢNH VARIANT ===
     const imagesByColor = {};
     for (const color of Object.keys(variantFilesByColor)) {
       imagesByColor[color] = [];
@@ -598,7 +576,7 @@ const addProductVariant = async (req, res) => {
         } catch (err) {
           console.error("Upload ảnh biến thể lỗi:", err.message);
         } finally {
-          markForDeletion(file.path); // Ghi nhớ để xóa sau
+          markForDeletion(file.path);
         }
       }
     }
@@ -608,7 +586,6 @@ const addProductVariant = async (req, res) => {
       images: imagesByColor[color],
     }));
 
-    // Dọn dẹp khi thành công
     await cleanupAllTempFiles();
 
     return res.status(201).json({
@@ -647,7 +624,9 @@ const updateFullProduct = async (req, res) => {
 
   const cleanupAllTempFiles = async () => {
     for (const path of filesToDelete) {
-      try { await fs.unlink(path); } catch (err) {
+      try {
+        await fs.unlink(path);
+      } catch (err) {
         if (err.code !== "ENOENT") console.error("Lỗi xóa file tạm:", err);
       }
     }
@@ -660,7 +639,11 @@ const updateFullProduct = async (req, res) => {
   };
 
   function normalizeColor(color) {
-    return color.normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/\s+/g, "_").toLowerCase();
+    return color
+      .normalize("NFD")
+      .replace(/[\u0300-\u036f]/g, "")
+      .replace(/\s+/g, "_")
+      .toLowerCase();
   }
 
   const t = await sequelize.transaction();
@@ -669,38 +652,53 @@ const updateFullProduct = async (req, res) => {
     const product_id = req.params.product_id;
     if (!product_id) return sendError("Thiếu product_id");
 
-    // Đánh dấu file tạm ngay từ đầu
-    req.files?.forEach(f => markForDeletion(f.path));
+    req.files?.forEach((f) => markForDeletion(f.path));
 
     const product = await model.products.findByPk(product_id, {
-      include: [{ model: model.categories, as: "category", attributes: ["name"] }],
+      include: [
+        { model: model.categories, as: "category", attributes: ["name"] },
+      ],
     });
     if (!product) return sendError("Sản phẩm không tồn tại");
 
-    // Trim body
     if (req.body && typeof req.body === "object" && !Array.isArray(req.body)) {
-      Object.keys(req.body).forEach(k => {
+      Object.keys(req.body).forEach((k) => {
         if (typeof req.body[k] === "string") req.body[k] = req.body[k].trim();
       });
     }
 
-    const { name, category_id, description, price, discount, spec, product_variants } = req.body || {};
+    const {
+      name,
+      category_id,
+      description,
+      price,
+      discount,
+      spec,
+      product_variants,
+    } = req.body || {};
 
-    // === CÁC TRƯỜNG KHÁC (giữ nguyên validate) ===
     if (name !== undefined) {
       if (!name) return sendError("Tên sản phẩm không được để trống");
       if (!/^[a-zA-Z0-9À-ỹ\s]+$/.test(name))
-        return sendError("Tên sản phẩm chỉ được chứa chữ cái, số và khoảng trắng");
-      if (name.length < 10) return sendError("Tên sản phẩm phải có ít nhất 10 ký tự");
+        return sendError(
+          "Tên sản phẩm chỉ được chứa chữ cái, số và khoảng trắng"
+        );
+      if (name.length < 10)
+        return sendError("Tên sản phẩm phải có ít nhất 10 ký tự");
 
       const exist = await model.products.findOne({
-        where: { name, category_id: category_id ?? product.category_id, product_id: { [Op.ne]: product_id } },
+        where: {
+          name,
+          category_id: category_id ?? product.category_id,
+          product_id: { [Op.ne]: product_id },
+        },
       });
       if (exist) return sendError("Tên sản phẩm đã tồn tại trong danh mục");
     }
 
     if (price !== undefined) {
-      if (price === "" || price === null) return sendError("Giá không được để trống");
+      if (price === "" || price === null)
+        return sendError("Giá không được để trống");
       const numPrice = Number(price);
       if (isNaN(numPrice) || numPrice < 40000 || numPrice > 10000000)
         return sendError("Giá phải từ 40.000 → 10.000.000");
@@ -712,87 +710,123 @@ const updateFullProduct = async (req, res) => {
         return sendError("Mức giảm giá phải là số nguyên từ 0 đến 99");
     }
 
-    if (description !== undefined && description !== "" && !/^[\p{L}0-9\s.,!?:;"'()-]+$/u.test(description)) {
-      return sendError("Mô tả chỉ được chứa chữ, số, khoảng trắng và dấu câu cơ bản");
+    if (
+      description !== undefined &&
+      description !== "" &&
+      !/^[\p{L}0-9\s.,!?:;"'()-]+$/u.test(description)
+    ) {
+      return sendError(
+        "Mô tả chỉ được chứa chữ, số, khoảng trắng và dấu câu cơ bản"
+      );
     }
 
-    // === SPEC ===
     let specArray = product.spec || [];
     if (spec !== undefined && spec !== null) {
       const specStr = typeof spec === "string" ? spec.trim() : "";
       if (specStr !== "") {
         try {
           const parsed = JSON.parse(specStr);
-          if (!Array.isArray(parsed)) return sendError("Spec phải là mảng JSON");
+          if (!Array.isArray(parsed))
+            return sendError("Spec phải là mảng JSON");
           const forbiddenChars = /[<>;"'\\]/;
           for (const item of parsed) {
-            if (typeof item !== "object" || !item.label || !item.value || typeof item.label !== "string" || typeof item.value !== "string") {
-              return sendError("Mỗi spec phải có {label: string, value: string}");
+            if (
+              typeof item !== "object" ||
+              !item.label ||
+              !item.value ||
+              typeof item.label !== "string" ||
+              typeof item.value !== "string"
+            ) {
+              return sendError(
+                "Mỗi spec phải có {label: string, value: string}"
+              );
             }
             const label = item.label.trim();
             const value = item.value.trim();
-            if (!label || !value) return sendError("Label và Value spec không được để trống");
+            if (!label || !value)
+              return sendError("Label và Value spec không được để trống");
             if (forbiddenChars.test(label) || forbiddenChars.test(value))
               return sendError("Label/Value spec chứa ký tự không cho phép");
           }
-          specArray = parsed.map(i => ({ label: i.label.trim(), value: i.value.trim() }));
+          specArray = parsed.map((i) => ({
+            label: i.label.trim(),
+            value: i.value.trim(),
+          }));
         } catch {
           return sendError("Spec phải là JSON hợp lệ");
         }
       }
     }
 
-    // === CẬP NHẬT STOCK – CHỈ CẦN COLOR + STOCK (KHÔNG VALIDATE SIZE) ===
     if (product_variants !== undefined) {
       let variants;
-      try { variants = JSON.parse(product_variants); } 
-      catch { return sendError("product_variants phải là JSON hợp lệ"); }
+      try {
+        variants = JSON.parse(product_variants);
+      } catch {
+        return sendError("product_variants phải là JSON hợp lệ");
+      }
 
-      if (!Array.isArray(variants)) return sendError("product_variants phải là mảng");
+      if (!Array.isArray(variants))
+        return sendError("product_variants phải là mảng");
 
       for (const v of variants) {
         const color = v.color?.trim();
 
         if (v.stock === undefined || v.stock === null || v.stock === "")
-          return sendError(`Số lượng không được để trống cho màu ${color || '(không xác định)'}`);
+          return sendError(
+            `Số lượng không được để trống cho màu ${
+              color || "(không xác định)"
+            }`
+          );
 
         const numStock = Number(v.stock);
         if (isNaN(numStock) || numStock < 0 || numStock > 10000)
-          return sendError(`Số lượng phải từ 0 → 10000 cho màu ${color || '(không xác định)'}`);
+          return sendError(
+            `Số lượng phải từ 0 → 10000 cho màu ${color || "(không xác định)"}`
+          );
 
-        // SIZE: DÙNG NGUYÊN NHƯ FRONTEND GỬI – KHÔNG XỬ LÝ GÌ CẢ!
         const size = v.size === undefined ? null : v.size;
 
-        // Tìm biến thể tồn tại
         const exist = await model.product_variants.findOne({
           where: { product_id, color, size },
-          transaction: t
+          transaction: t,
         });
 
         if (!exist) {
-          return sendError(`Không tìm thấy biến thể: ${color}${size !== null && size !== undefined ? ` - ${size}` : " (không size)"}`);
+          return sendError(
+            `Không tìm thấy biến thể: ${color}${
+              size !== null && size !== undefined
+                ? ` - ${size}`
+                : " (không size)"
+            }`
+          );
         }
 
-        // Cập nhật stock
         await model.product_variants.update(
           { stock: numStock },
-          { where: { product_variant_id: exist.product_variant_id }, transaction: t }
+          {
+            where: { product_variant_id: exist.product_variant_id },
+            transaction: t,
+          }
         );
       }
     }
 
-    // === XỬ LÝ ẢNH ===
     let newThumbnailUrl = product.thumbnail;
-    const thumbnailFile = req.files?.find(f => f.fieldname === "thumbnail");
+    const thumbnailFile = req.files?.find((f) => f.fieldname === "thumbnail");
     if (thumbnailFile) {
-      if (req.files.filter(f => f.fieldname === "thumbnail").length > 1)
+      if (req.files.filter((f) => f.fieldname === "thumbnail").length > 1)
         return sendError("Chỉ được upload 1 ảnh thumbnail");
 
       if (product.thumbnail) {
         try {
           const publicId = product.thumbnail.split("/").pop().split(".")[0];
-          await cloudinary.uploader.destroy(`products/${product_id}/thumbnail/${publicId}`);
-        } catch (err) { console.error("Lỗi xóa thumbnail cũ:", err); }
+          await cloudinary.uploader.destroy(
+            `products/${product_id}/thumbnail/${publicId}`
+          );
+        } catch (err) {
+          console.error("Lỗi xóa thumbnail cũ:", err);
+        }
       }
 
       const result = await cloudinary.uploader.upload(thumbnailFile.path, {
@@ -803,16 +837,23 @@ const updateFullProduct = async (req, res) => {
       markForDeletion(thumbnailFile.path);
     }
 
-    const variantFiles = req.files?.filter(f => f.fieldname !== "thumbnail") || [];
+    const variantFiles =
+      req.files?.filter((f) => f.fieldname !== "thumbnail") || [];
     if (variantFiles.length > 0) {
-      const existingVariants = await model.product_variants.findAll({ where: { product_id } });
+      const existingVariants = await model.product_variants.findAll({
+        where: { product_id },
+      });
       const colorMap = {};
-      existingVariants.forEach(v => { colorMap[normalizeColor(v.color)] = v.color; });
+      existingVariants.forEach((v) => {
+        colorMap[normalizeColor(v.color)] = v.color;
+      });
 
       const filesByColor = {};
-      variantFiles.forEach(file => {
+      variantFiles.forEach((file) => {
         let fieldName = file.fieldname.replace(/\+/g, " ");
-        try { fieldName = decodeURIComponent(fieldName); } catch {}
+        try {
+          fieldName = decodeURIComponent(fieldName);
+        } catch {}
         const match = fieldName.match(/^images\[(.+?)\]\[\]$/);
         if (!match) return;
         const realColor = colorMap[normalizeColor(match[1])];
@@ -823,36 +864,51 @@ const updateFullProduct = async (req, res) => {
       });
 
       for (const [color, files] of Object.entries(filesByColor)) {
-        if (files.length > 10) return sendError(`Màu ${color} chỉ được upload tối đa 10 ảnh`);
+        if (files.length > 10)
+          return sendError(`Màu ${color} chỉ được upload tối đa 10 ảnh`);
       }
 
       for (const [color, files] of Object.entries(filesByColor)) {
         const folderName = normalizeColor(color);
         try {
-          await cloudinary.api.delete_resources_by_prefix(`products/${product_id}/${folderName}`);
-          await cloudinary.api.delete_resources_by_prefix(`products/${product_id}/${folderName}/`);
-        } catch (err) { console.error("Lỗi xóa ảnh cũ:", err); }
+          await cloudinary.api.delete_resources_by_prefix(
+            `products/${product_id}/${folderName}`
+          );
+          await cloudinary.api.delete_resources_by_prefix(
+            `products/${product_id}/${folderName}/`
+          );
+        } catch (err) {
+          console.error("Lỗi xóa ảnh cũ:", err);
+        }
 
-        await model.product_images.destroy({ where: { product_id, color }, transaction: t });
+        await model.product_images.destroy({
+          where: { product_id, color },
+          transaction: t,
+        });
 
         for (const file of files) {
           const result = await cloudinary.uploader.upload(file.path, {
             folder: `products/${product_id}/${folderName}`,
           });
-          await model.product_images.create({
-            product_id, color, image: result.secure_url
-          }, { transaction: t });
+          await model.product_images.create(
+            {
+              product_id,
+              color,
+              image: result.secure_url,
+            },
+            { transaction: t }
+          );
           markForDeletion(file.path);
         }
       }
     }
 
-    // === LƯU DB ===
     if (name !== undefined) product.name = name;
     if (category_id !== undefined) product.category_id = category_id;
     if (description !== undefined) product.description = description || "";
     if (price !== undefined) product.price = Number(price);
-    if (discount !== undefined && discount !== "") product.discount = Number(discount);
+    if (discount !== undefined && discount !== "")
+      product.discount = Number(discount);
     product.spec = specArray;
     product.thumbnail = newThumbnailUrl;
 
@@ -860,14 +916,21 @@ const updateFullProduct = async (req, res) => {
     await t.commit();
     await cleanupAllTempFiles();
 
-    // === RESPONSE ===
-    const updatedVariants = await model.product_variants.findAll({ where: { product_id } });
-    const allImages = await model.product_images.findAll({ where: { product_id }, attributes: ["color", "image"], raw: true });
-    const colorsGrouped = Object.values(allImages.reduce((acc, cur) => {
-      if (!acc[cur.color]) acc[cur.color] = { color: cur.color, images: [] };
-      acc[cur.color].images.push(cur.image);
-      return acc;
-    }, {}));
+    const updatedVariants = await model.product_variants.findAll({
+      where: { product_id },
+    });
+    const allImages = await model.product_images.findAll({
+      where: { product_id },
+      attributes: ["color", "image"],
+      raw: true,
+    });
+    const colorsGrouped = Object.values(
+      allImages.reduce((acc, cur) => {
+        if (!acc[cur.color]) acc[cur.color] = { color: cur.color, images: [] };
+        acc[cur.color].images.push(cur.image);
+        return acc;
+      }, {})
+    );
 
     return res.status(200).json({
       message: "Cập nhật sản phẩm thành công",
@@ -886,7 +949,6 @@ const updateFullProduct = async (req, res) => {
         colors: colorsGrouped,
       },
     });
-
   } catch (err) {
     await t.rollback();
     await cleanupAllTempFiles();
@@ -904,23 +966,18 @@ const addSizeToVariant = async (req, res) => {
     const { product_id, color } = req.params;
     let { size, stock } = req.body;
 
-    // ====== Validate color từ params ======
     const colorTrimmed = color?.trim();
     if (!colorTrimmed) return sendError(res, "Màu sắc không được để trống");
 
-    // ====== Validate size ======
     size = size?.toString().trim();
     if (!size || size === "") return sendError(res, "Size không được để trống");
 
-    // ====== Validate stock – SỬA HOÀN CHỈNH TẠI ĐÂY ======
     if (stock === undefined || stock === null || stock === "") {
       return sendError(res, "Số lượng không được để trống");
     }
 
-    // Chuyển về chuỗi để trim an toàn (dù stock là số hay chuỗi)
     const stockStr = String(stock).trim();
 
-    // Nếu sau khi trim là chuỗi rỗng → lỗi
     if (stockStr === "") {
       return sendError(res, "Số lượng không được để trống");
     }
@@ -929,10 +986,9 @@ const addSizeToVariant = async (req, res) => {
     if (isNaN(stockNum) || stockNum < 0 || stockNum > 10000) {
       return sendError(res, "Số lượng phải là số từ 0 → 10000");
     }
-    // Gán lại stock để dùng tiếp
+
     stock = stockNum;
 
-    // ====== Kiểm tra product tồn tại ======
     const product = await model.products.findByPk(product_id, {
       include: [
         { model: model.categories, as: "category", attributes: ["name"] },
@@ -940,7 +996,6 @@ const addSizeToVariant = async (req, res) => {
     });
     if (!product) return sendError(res, "Sản phẩm không tồn tại");
 
-    // ====== Kiểm tra màu đã tồn tại ======
     const existingColor = await model.product_variants.findOne({
       where: { product_id, color: colorTrimmed },
     });
@@ -951,7 +1006,6 @@ const addSizeToVariant = async (req, res) => {
       );
     }
 
-    // ====== Kiểm tra size trùng ======
     const sizeExist = await model.product_variants.findOne({
       where: { product_id, color: colorTrimmed, size },
     });
@@ -962,7 +1016,6 @@ const addSizeToVariant = async (req, res) => {
       );
     }
 
-    // ====== Tạo SKU tự động ======
     const sku = buildSKU(
       product.category.name,
       product.product_id,
@@ -970,7 +1023,6 @@ const addSizeToVariant = async (req, res) => {
       size
     );
 
-    // ====== Tạo size mới ======
     const newVariant = await model.product_variants.create({
       product_id,
       color: colorTrimmed,
@@ -981,7 +1033,6 @@ const addSizeToVariant = async (req, res) => {
       sku,
     });
 
-    // ====== Format response giống chuẩn ======
     const formattedVariant = {
       product_variant_id: newVariant.product_variant_id,
       color: newVariant.color,
@@ -1021,7 +1072,6 @@ const getAllChildCategoryIds = (categories, parentId) => {
   directChildren.forEach((child) => {
     result.push(child.category_id);
 
-    // tiếp tục lấy cấp sâu hơn
     result = result.concat(
       getAllChildCategoryIds(categories, child.category_id)
     );
@@ -1042,7 +1092,6 @@ const getProductByDanhMucCap1 = async (req, res) => {
         .json({ message: "Danh mục cấp 1 không được để trống" });
     }
 
-    // 1. Kiểm tra danh mục cấp 1
     const rootCategory = await model.categories.findByPk(root_id, {
       include: [{ model: model.categories, as: "parent" }],
     });
@@ -1054,17 +1103,14 @@ const getProductByDanhMucCap1 = async (req, res) => {
         .status(400)
         .json({ message: "root_id không phải danh mục cấp 1" });
 
-    // 2. Lấy toàn bộ categories
     const allCategories = await model.categories.findAll({
       attributes: ["category_id", "parent_id"],
       raw: true,
     });
 
-    // 3. Lấy toàn bộ ID danh mục con mọi cấp
     const childIds = getAllChildCategoryIds(allCategories, root_id);
     childIds.push(root_id);
 
-    // 4. Đếm tổng sản phẩm
     const total = await model.products.count({
       where: { category_id: { [Op.in]: childIds } },
     });
@@ -1081,7 +1127,6 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const validPage = Math.min(page, totalPages || 1);
     const offset = (validPage - 1) * limit;
 
-    // 5. Lấy danh sách sản phẩm
     const products = await model.products.findAll({
       where: { category_id: { [Op.in]: childIds } },
       limit,
@@ -1127,9 +1172,7 @@ const getProductByDanhMucCap1 = async (req, res) => {
       nest: true,
     });
 
-    // 6. Format dữ liệu
     const formattedData = products.map((p) => {
-      // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
         if (!colors[img.color])
@@ -1137,7 +1180,6 @@ const getProductByDanhMucCap1 = async (req, res) => {
         colors[img.color].images.push(img.image);
       });
 
-      // Format variants
       const product_variants = p.product_variants.map((v) => ({
         product_variant_id: v.product_variant_id,
         color: v.color,
@@ -1183,7 +1225,6 @@ const getAllProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-    // Tổng số sản phẩm
     const total = await model.products.count();
     const totalPages = Math.ceil(total / limit);
 
@@ -1200,7 +1241,6 @@ const getAllProducts = async (req, res) => {
     const validPage = Math.min(page, totalPages || 1);
     const offset = (validPage - 1) * limit;
 
-    // Lấy danh sách sản phẩm
     const products = await model.products.findAll({
       limit,
       offset,
@@ -1245,9 +1285,7 @@ const getAllProducts = async (req, res) => {
       nest: true,
     });
 
-    // FORMAT DỮ LIỆU
     const formattedData = products.map((p) => {
-      // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
         if (!colors[img.color])
@@ -1255,7 +1293,6 @@ const getAllProducts = async (req, res) => {
         colors[img.color].images.push(img.image);
       });
 
-      // Format variants
       const product_variants = p.product_variants.map((v) => ({
         product_variant_id: v.product_variant_id,
         color: v.color,
@@ -1301,7 +1338,6 @@ const getActiveProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-    // 1. Tổng số sản phẩm active
     const total = await model.products.count({ where: { status: "đang bán" } });
 
     if (total === 0) {
@@ -1318,7 +1354,6 @@ const getActiveProducts = async (req, res) => {
     const validPage = Math.min(page, totalPages || 1);
     const offset = (validPage - 1) * limit;
 
-    // 2. Lấy danh sách sản phẩm active
     const products = await model.products.findAll({
       where: { status: "đang bán" },
       limit,
@@ -1364,9 +1399,7 @@ const getActiveProducts = async (req, res) => {
       nest: true,
     });
 
-    // 3. Format dữ liệu
     const formattedData = products.map((p) => {
-      // Gom ảnh theo màu
       const colors = {};
       p.product_images.forEach((img) => {
         if (!colors[img.color])
@@ -1374,7 +1407,6 @@ const getActiveProducts = async (req, res) => {
         colors[img.color].images.push(img.image);
       });
 
-      // Format variants
       const product_variants = p.product_variants.map((v) => ({
         product_variant_id: v.product_variant_id,
         color: v.color,
@@ -1424,10 +1456,8 @@ const getProductByKeyWordAdmin = async (req, res) => {
     const pageNum = parseInt(page, 10) || 1;
     const pageSize = parseInt(limit, 10) || 10;
 
-    // Chuẩn hóa từ khóa tìm kiếm (chỉ để an toàn)
     const searchTerm = `%${keyword.trim()}%`;
 
-    // 1. Tìm product_id từ variant có SKU chứa keyword (không phân biệt hoa thường)
     const variantProducts = await model.product_variants.findAll({
       attributes: ["product_id"],
       where: {
@@ -1437,7 +1467,6 @@ const getProductByKeyWordAdmin = async (req, res) => {
     });
     const variantProductIds = variantProducts.map((v) => v.product_id);
 
-    // 2. Điều kiện tìm kiếm tên sản phẩm + danh mục KHÔNG DẤU
     const nameSearchCondition = Sequelize.where(
       Sequelize.fn("unaccent", Sequelize.col("products.name")),
       { [Op.iLike]: Sequelize.fn("unaccent", searchTerm) }
@@ -1448,7 +1477,6 @@ const getProductByKeyWordAdmin = async (req, res) => {
       { [Op.iLike]: Sequelize.fn("unaccent", searchTerm) }
     );
 
-    // 3. Đếm tổng số sản phẩm phù hợp
     const total = await model.products.count({
       where: {
         [Op.or]: [
@@ -1481,7 +1509,6 @@ const getProductByKeyWordAdmin = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
-    // 4. Lấy danh sách sản phẩm (có phân trang)
     const products = await model.products.findAll({
       where: {
         [Op.or]: [
@@ -1516,7 +1543,6 @@ const getProductByKeyWordAdmin = async (req, res) => {
       distinct: true,
     });
 
-    // 5. Format lại ảnh theo màu
     const formatted = products.map((p) => {
       const colorMap = {};
       p.product_images.forEach((img) => {
@@ -1570,14 +1596,12 @@ const getProductByKeyWordUser = async (req, res) => {
     const pageSize = parseInt(limit, 10) || 10;
     const searchTerm = `%${keyword.trim()}%`;
 
-    // Điều kiện tìm kiếm tên không dấu
     const searchCondition = Sequelize.where(
       Sequelize.fn("unaccent", Sequelize.col("products.name")),
       "ILIKE",
       Sequelize.fn("unaccent", searchTerm)
     );
 
-    // 1. Đếm tổng
     const total = await model.products.count({
       where: {
         [Op.and]: [{ status: "đang bán" }, searchCondition],
@@ -1598,7 +1622,6 @@ const getProductByKeyWordUser = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
-    // 2. Lấy danh sách
     const products = await model.products.findAll({
       attributes: [
         "product_id",
@@ -1641,7 +1664,6 @@ const getProductByKeyWordUser = async (req, res) => {
       distinct: true,
     });
 
-    // 3. Format dữ liệu (giữ nguyên như cũ)
     const formattedData = products.map((p) => {
       const colors = {};
       p.product_images.forEach((img) => {
@@ -1681,12 +1703,11 @@ const getProductByKeyWordUser = async (req, res) => {
 
 const updateProductStatus = async (req, res) => {
   try {
-    const { id } = req.params; // product_id từ URL
+    const { id } = req.params;
     if (!id) {
       return res.status(400).json({ message: "Chưa cung cấp product_id" });
     }
 
-    // Tìm sản phẩm
     const product = await model.products.findByPk(id, {
       include: [
         { model: model.categories, as: "category", attributes: ["name"] },
@@ -1696,9 +1717,8 @@ const updateProductStatus = async (req, res) => {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-    // Đổi trạng thái
     if (product.status === "đang bán") {
-      product.status = "ngưng bán"; // Ẩn sản phẩm
+      product.status = "ngưng bán";
       await product.save();
       return res.status(200).json({
         message: "Sản phẩm đã được ẩn thành công",
@@ -1716,7 +1736,7 @@ const updateProductStatus = async (req, res) => {
         },
       });
     } else {
-      product.status = "đang bán"; // Hiển thị sản phẩm
+      product.status = "đang bán";
       await product.save();
       return res.status(200).json({
         message: "Sản phẩm đã được hiển thị lại thành công",
@@ -1745,7 +1765,6 @@ const getProductDetail = async (req, res) => {
   try {
     const { product_id } = req.params;
 
-    // Lấy thông tin sản phẩm
     const product = await model.products.findByPk(product_id, {
       attributes: [
         "product_id",
@@ -1792,7 +1811,6 @@ const getProductDetail = async (req, res) => {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-    // Gom ảnh theo màu
     const colorsMap = {};
     const colors = [];
     product.product_images.forEach((img) => {
@@ -1803,7 +1821,6 @@ const getProductDetail = async (req, res) => {
       colorsMap[img.color].images.push(img.image);
     });
 
-    // Format variants
     const variants = product.product_variants.map((v) => ({
       product_variant_id: v.product_variant_id,
       color: v.color,
@@ -1851,7 +1868,6 @@ const getProductsByStatus = async (req, res) => {
         .json({ message: "Vui lòng nhập trạng thái sản phẩm" });
     }
 
-    // 1. Đếm tổng sản phẩm
     const total = await model.products.count({
       where: { status },
       distinct: true,
@@ -1869,7 +1885,6 @@ const getProductsByStatus = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    // 2. Lấy danh sách sản phẩm phân trang
     const products = await model.products.findAll({
       where: { status },
       include: [
@@ -1897,7 +1912,6 @@ const getProductsByStatus = async (req, res) => {
       distinct: true,
     });
 
-    // 3. Gom ảnh theo màu
     const formatted = products.map((p) => {
       const colorMap = {};
       p.product_images.forEach((img) => {
@@ -1940,7 +1954,6 @@ const deleteProduct = async (req, res) => {
   const t = await sequelize.transaction();
 
   try {
-    // 1. Tìm sản phẩm
     const product = await model.products.findByPk(product_id, {
       transaction: t,
     });
@@ -1948,7 +1961,6 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-    // 2. Kiểm tra: có trong giỏ hàng không?
     const inCart = await model.carts.count({
       include: [
         {
@@ -1961,7 +1973,6 @@ const deleteProduct = async (req, res) => {
       transaction: t,
     });
 
-    // 3. Kiểm tra: có trong đơn hàng không?
     const inOrder = await model.order_details.count({
       include: [
         {
@@ -1986,20 +1997,16 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    // 4. XÓA ẢNH TRÊN CLOUDINARY (toàn bộ folder sản phẩm)
     const folderPrefix = `products/${product_id}`;
     try {
-      // Xóa toàn bộ folder (thumbnail + tất cả màu)
       await cloudinary.api.delete_resources_by_prefix(folderPrefix);
-      // Xóa cả folder rỗng (nếu còn)
+
       await cloudinary.api.delete_folder(folderPrefix);
       console.log(`Đã xóa folder Cloudinary: ${folderPrefix}`);
     } catch (cloudErr) {
       console.error("Lỗi xóa ảnh Cloudinary:", cloudErr.message);
-      // Không return lỗi ở đây → vẫn tiếp tục xóa DB (ảnh có thể xóa sau)
     }
 
-    // 5. XÓA DỮ LIỆU TRONG DATABASE (cứng)
     await model.product_images.destroy({
       where: { product_id },
       transaction: t,

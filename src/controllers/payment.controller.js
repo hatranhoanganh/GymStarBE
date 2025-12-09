@@ -16,10 +16,9 @@ const getAllPayments = async (req, res) => {
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
 
-    // Đếm tổng số payment
     const count = await model.payments.count();
     const totalPages = Math.ceil(count / pageSize);
-    // Trường hợp không có dữ liệu
+
     if (count === 0) {
       return res.status(200).json({
         message: "Không có dữ liệu thanh toán.",
@@ -30,11 +29,9 @@ const getAllPayments = async (req, res) => {
       });
     }
 
-    // Ép trang: không cho vượt quá totalPages
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    // Lấy danh sách payment
     const payments = await model.payments.findAll({
       attributes: [
         "payment_id",
@@ -46,15 +43,14 @@ const getAllPayments = async (req, res) => {
       ],
       limit: pageSize,
       offset,
-      order: [["payment_id", "DESC"]], // hoặc [["payment_date", "DESC"]] nếu muốn mới nhất trước
+      order: [["payment_id", "DESC"]],
     });
 
-    // Format dữ liệu giống kiểu bạn đang làm
     const formattedData = payments.map((payment) => ({
       payment_id: payment.payment_id,
       order_id: payment.order_id,
       method: payment.method,
-      total: parseFloat(payment.total), // hoặc format tiền nếu cần: payment.total.toLocaleString('vi-VN')
+      total: parseFloat(payment.total),
       payment_date: formatVNDateTime(payment.payment_date) || null,
       status: payment.status,
     }));
@@ -68,11 +64,10 @@ const getAllPayments = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi getAllPayments:", error);
-    return res.status(500).json({ 
-      message: "Lỗi server" 
+    return res.status(500).json({
+      message: "Lỗi server",
     });
   }
 };
 
-
-export {getAllPayments  };
+export { getAllPayments };
