@@ -76,11 +76,12 @@ const startServer = async () => {
     // Kết nối DB và sync DEV (tất cả lỗi sẽ được throw)
     await sequelize.authenticate();
     if (process.env.NODE_ENV !== "production") {
-      await sequelize.sync({ alter: true });
+      initModels(sequelize);
+      await sequelize.sync();
     }
 
     // Khởi động server (chỉ log server)
-    initModels(sequelize);
+    
     app.listen(PORT, "0.0.0.0", () => {
       console.log(`Server running on port ${PORT}`);
       console.log(`http://localhost:${PORT}`);

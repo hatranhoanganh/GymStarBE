@@ -27,7 +27,7 @@ export default class categories extends Model {
       tableName: 'categories',
       schema: 'public',
       timestamps: true,
-      underscored: true,     //  Tự map createdAt ↔ created_at
+      underscored: true,     
       indexes: [
         {
           name: "categories_pkey",

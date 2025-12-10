@@ -48,6 +48,7 @@ const createCategory = async (req, res) => {
     const newCategory = await model.categories.create({
       name: cleanName,
       parent_id: validParentId,
+      
     });
 
     return res.status(201).json({
@@ -217,17 +218,17 @@ const updateCategory = async (req, res) => {
 
 const deleteCategory = async (req, res) => {
   try {
-    const { id } = req.params;
+    const { category_id } = req.params;
 
     const category = await model.categories.findOne({
-      where: { category_id: id },
+      where: { category_id: category_id },
     });
     if (!category) {
       return res.status(404).json({ message: "Danh mục không tồn tại" });
     }
 
     const childCount = await model.categories.count({
-      where: { parent_id: id },
+      where: { parent_id: category_id },
     });
     if (childCount > 0) {
       return res
@@ -236,7 +237,7 @@ const deleteCategory = async (req, res) => {
     }
 
     const productCount = await model.products.count({
-      where: { category_id: id },
+      where: { category_id: category_id },
     });
     if (productCount > 0) {
       return res

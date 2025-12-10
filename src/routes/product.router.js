@@ -1,5 +1,7 @@
 import express from "express";
 import upload from "../utils/multer.js";
+import verifyToken from "../middleware/auth.middleware.js";
+import {requireRole} from "../middleware/role.middleware.js";
 import {
   addProductVariant,
   addSizeToVariant,
@@ -18,7 +20,7 @@ import {
 
 
 const ProductRouter = express.Router();
-const handleUpload = (req, res, next, action) => {
+const handleUpload = (req, res, action) => {
   upload(req, res, (err) => {
     if (err) {
       if (err.code === "LIMIT_FILE_SIZE") {
@@ -30,29 +32,53 @@ const handleUpload = (req, res, next, action) => {
   });
 };
 
-ProductRouter.post("/TaoSanPhamFull", (req, res) => {
-  handleUpload(req, res, null, addFullProduct);
-});
-ProductRouter.post("/ThemBienThe/:product_id", (req, res) => {
-  handleUpload(req, res, null, addProductVariant);
-});
-ProductRouter.put("/CapNhatSanPham/:product_id", (req, res) => {
-  handleUpload(req, res, null, updateFullProduct);
-});
-ProductRouter.post("/ThemSize/:product_id/:color", addSizeToVariant);
+
+//quản trị viên và quản lý sản phẩm
+ProductRouter.post(
+  "/TaoSanPhamFull",
+  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),
+  (req, res) => handleUpload(req, res, addFullProduct)
+);
+ProductRouter.post(
+  "/ThemBienThe/:product_id",
+  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),
+  (req, res) => handleUpload(req, res, addProductVariant)
+);
+
+ProductRouter.put(
+  "/CapNhatSanPham/:product_id",
+  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),
+  (req, res) => handleUpload(req, res, updateFullProduct)
+);
+ProductRouter.post("/ThemSize/:product_id/:color",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),addSizeToVariant);
 ProductRouter.get(
-  "/LaySanPhamTheoDanhMucCap1/:root_id",
+  "/LaySanPhamTheoDanhMucCap1/:root_id", verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),
   getProductByDanhMucCap1
 );
-ProductRouter.get("/LayTatCaSanPhamAdmin", getAllProducts);
-ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
-ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
+ProductRouter.get("/LayTatCaSanPhamAdmin",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),getAllProducts);
 ProductRouter.get(
-  "/LayDanhSachSanPhamTheoTuKhoaAdmin",
+  "/LayDanhSachSanPhamTheoTuKhoaAdmin", verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),
   getProductByKeyWordAdmin
 );
+
+ProductRouter.put("/CapNhatTrangThaiSanPham/:id",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),updateProductStatus);
+ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),getProductsByStatus);
+ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProduct);
+
+//không cần phân quyền
+ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
+ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-ProductRouter.put("/CapNhatTrangThaiSanPham/:id", updateProductStatus);
-ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai", getProductsByStatus);
-ProductRouter.delete("/XoaSanPham/:product_id", deleteProduct);
+
+
 export default ProductRouter;

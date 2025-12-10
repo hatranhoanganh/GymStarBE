@@ -1,5 +1,5 @@
 import express from "express";
-
+import verifyToken from "../middleware/auth.middleware.js";
 import { addToCart,
 getCart,
 setCartQuantity,
@@ -12,12 +12,12 @@ deleteMultipleCartItems,
 
 const CartRouter = express.Router();
 
-CartRouter.post("/ThemSanPhamVaoGioHang/:user_id", addToCart);
-CartRouter.get("/XemGioHang/:user_id", getCart);
-CartRouter.put("/CapNhatSoLuongGioHang1/:user_id", updateCartQuantity);
-CartRouter.put("/CapNhatSoLuongGioHang2/:user_id", setCartQuantity);
-CartRouter.delete("/XoaSanPhamKhoiGioHang/:user_id", deleteCartItem);
-CartRouter.delete("/XoaNhieuSanPhamKhoiGioHang/:user_id", deleteMultipleCartItems);
+CartRouter.post("/ThemSanPhamVaoGioHang",verifyToken, addToCart);
+CartRouter.get("/XemGioHang",verifyToken, getCart);
+CartRouter.put("/CapNhatSoLuongGioHang1",verifyToken, updateCartQuantity);
+CartRouter.put("/CapNhatSoLuongGioHang2",verifyToken, setCartQuantity);
+CartRouter.delete("/XoaSanPhamKhoiGioHang",verifyToken, deleteCartItem);
+CartRouter.delete("/XoaNhieuSanPhamKhoiGioHang",verifyToken, deleteMultipleCartItems);
 
 
 

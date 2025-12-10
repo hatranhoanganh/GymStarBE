@@ -1,5 +1,6 @@
 import express from "express";
-
+import verifyToken from "../middleware/auth.middleware.js";
+import {requireRoleExcept,requireRole} from "../middleware/role.middleware.js";
 import {
   getAllUsers,
   registerUser,
@@ -24,26 +25,37 @@ import {
 import { forgotPasswordLimiter } from "../middleware/rateLimit.js";
 
 const userRouter = express.Router();
+//trừ khách hàng
+userRouter.get("/LayDanhSachNguoiDung", verifyToken,requireRoleExcept("Khách hàng"),getAllUsers);
+userRouter.get("/LayThongTinTaiKhoanTheoKeyWord",verifyToken,requireRoleExcept("Khách hàng"),  getUserByKeyword);
+userRouter.get("/LayThongTinTaiKhoanTheoStatus",verifyToken,requireRoleExcept("Khách hàng"),  getUsersByStatus);
 
-userRouter.get("/LayDanhSachNguoiDung", getAllUsers);
+//không cần phân quyền
 userRouter.post("/DangKy", registerUser);
 userRouter.get("/verify-email", verifyEmail);
 userRouter.post("/DangNhap", loginUser);
 userRouter.post("/refresh-token", refreshTokenRoute);
-userRouter.get("/LayThongTinNguoiDung/:id", getUserById);
-userRouter.put("/CapNhatTrangThai/:id", updateStatus);
-userRouter.put("/CapNhatThongTin/:id", updateUser);
-userRouter.get("/LayThongTinTaiKhoanTheoKeyWord",  getUserByKeyword);
-userRouter.get("/LayThongTinTaiKhoanTheoStatus",  getUsersByStatus);
-userRouter.put("/DoiMatKhau/:id", changePassword);
 userRouter.post("/QuenMatKhau", forgotPasswordLimiter, forgotPassword);
 userRouter.post("/verify-otp", verifyOTP);
-userRouter.put("/DatLaiMatKhau", resetPassword);
-userRouter.put("/PhanQuyenRole/:user_id", assignUserRole);
-userRouter.get("/LayDanhSachRole", getAllRoles);
-userRouter.post("/TaoRole", createRole);
-userRouter.put("/CapNhatRole/:role_id", updateRole);
-userRouter.delete("/XoaRole/:role_id", deleteRole);
+userRouter.put("/DatLaiMatKhau", resetPassword);  
+
+//chính mình
+userRouter.get("/LayThongTinNguoiDung",verifyToken, getUserById);
+userRouter.put("/CapNhatThongTin", verifyToken, updateUser);
+userRouter.put("/DoiMatKhau",verifyToken, changePassword);
+
+//quản trị viên 
+userRouter.put("/CapNhatTrangThai/:user_id",verifyToken,requireRole("Quản trị viên"), updateStatus);
+userRouter.put("/PhanQuyenRole/:user_id", verifyToken,requireRole("Quản trị viên"),  assignUserRole);
+userRouter.get("/LayDanhSachRole",verifyToken,requireRole("Quản trị viên"), getAllRoles);
+userRouter.post("/TaoRole",verifyToken,requireRole("Quản trị viên"), createRole);
+userRouter.put("/CapNhatRole/:role_id",verifyToken,requireRole("Quản trị viên"), updateRole);
+userRouter.delete("/XoaRole/:role_id",verifyToken,requireRole("Quản trị viên"), deleteRole);
+
+
+
+
+
 
 
 export default userRouter;

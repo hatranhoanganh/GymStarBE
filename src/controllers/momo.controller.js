@@ -79,7 +79,7 @@ export const updatePayment = async (req, res) => {
     if (!order || !payment)
       return res.status(404).json({ message: "Không tìm thấy đơn" });
 
-    // ĐÃ XỬ LÝ RỒI → BỎ QUA
+    
     if (payment.status === "thành công") {
       return res.json({ resultCode: 0, message: "Already processed" });
     }
@@ -95,7 +95,7 @@ export const updatePayment = async (req, res) => {
       console.log(
         `MoMo báo thất bại (resultCode=${resultCode}) → sẽ tự xóa sau 1 phút`
       );
-      // → KHÔNG GỌI cancelOrderAndRestoreStock ở đây nữa!
+     //KHÔNG GỌI cancelOrderAndRestoreStock ở đây nữa!
     }
 
     return res.json({ resultCode: 0, message: "OK" });

@@ -1,5 +1,6 @@
 import express from "express";
-
+import verifyToken from "../middleware/auth.middleware.js";
+import {requireRole} from "../middleware/role.middleware.js";
 import { addAddress,
 updateAddress,
 deleteAddress,
@@ -12,13 +13,16 @@ getUserAddressesByKeyWord,
 
 const UserAddressRouter = express.Router();
 
-UserAddressRouter.post("/ThemDiaChi", addAddress);
-UserAddressRouter.put("/CapNhatDiaChi/:user_id", updateAddress);
-UserAddressRouter.put("/ChonDiaChiMacDinh/:user_id", setDefaultAddress);
-UserAddressRouter.delete("/XoaDiaChi/:user_id", deleteAddress);
-UserAddressRouter.get("/LayDanhSachDiaChi/:user_id", getUserAddressesById);
-UserAddressRouter.get("/LayDanhSachTatCaDiaChi", getAllUserAddresses);
-UserAddressRouter.get("/LayDanhSachDiaChiTheoTuKhoa",getUserAddressesByKeyWord);
+
+UserAddressRouter.post("/ThemDiaChi",verifyToken, addAddress);
+UserAddressRouter.put("/CapNhatDiaChi/:address_id",verifyToken, updateAddress);
+UserAddressRouter.put("/ChonDiaChiMacDinh/:address_id",verifyToken, setDefaultAddress);
+UserAddressRouter.delete("/XoaDiaChi/:address_id",verifyToken, deleteAddress);
+UserAddressRouter.get("/LayDanhSachDiaChi",verifyToken, getUserAddressesById);
+
+//quản trị viên và quản lý đơn hàng
+UserAddressRouter.get("/LayDanhSachTatCaDiaChi",verifyToken,requireRole("Quản trị viên","Quản lý đơn hàng"), getAllUserAddresses);
+UserAddressRouter.get("/LayDanhSachDiaChiTheoTuKhoa",verifyToken,requireRole("Quản trị viên","Quản lý đơn hàng"),getUserAddressesByKeyWord);
 
 
 

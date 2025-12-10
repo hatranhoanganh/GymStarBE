@@ -1,5 +1,6 @@
 import express from "express";
-
+import verifyToken from "../middleware/auth.middleware.js";
+import {requireRole} from "../middleware/role.middleware.js";
 import { getAllPayments,
 
 
@@ -9,12 +10,8 @@ import { getAllPayments,
 
 const PaymentRouter = express.Router();
 
-
-PaymentRouter.get("/LayDanhSachTatCaThanhToan", getAllPayments);
-// CartRouter.put("/CapNhatSoLuongGioHang1/:user_id", updateCartQuantity);
-// CartRouter.put("/CapNhatSoLuongGioHang2/:user_id", setCartQuantity);
-// CartRouter.delete("/XoaSanPhamKhoiGioHang/:user_id", deleteCartItem);
-// CartRouter.delete("/XoaNhieuSanPhamKhoiGioHang/:user_id", deleteMultipleCartItems);
+//quản trị viên và quản lý đơn hàng
+PaymentRouter.get("/LayDanhSachTatCaThanhToan", verifyToken,requireRole("Quản trị viên", "Quản lý đơn hàng"), getAllPayments);
 
 
 

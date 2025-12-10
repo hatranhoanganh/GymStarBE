@@ -324,7 +324,7 @@ const addFullProduct = async (req, res) => {
         },
         { transaction: t }
       );
-      createdVariants.push(variant);
+      createdVariants.push(variant);  
     }
 
     const thumbResult = await cloudinary.uploader.upload(
