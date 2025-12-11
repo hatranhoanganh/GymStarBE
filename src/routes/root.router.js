@@ -8,8 +8,8 @@ import UserAddressRouter from "./user_address.router.js";
 import OrderRouter from "./order.router.js";
 import PaymentRouter from "./payment.router.js";
 import MoMoRouter from "./momo.router.js";
+import FeedbackRouter from "./feedback.router.js";
 
-// tạo object router tổng
 const rootRoutes = express.Router();
 
 rootRoutes.use("/QuanLyNguoiDung", userRouter);
@@ -20,6 +20,7 @@ rootRoutes.use("/QuanLyGioHang", CartRouter);
 rootRoutes.use("/QuanLyDiaChiGiaoHang", UserAddressRouter);
 rootRoutes.use("/QuanLyDonHang", OrderRouter);
 rootRoutes.use("/QuanLyThanhToan", PaymentRouter);
+rootRoutes.use("/QuanLyGopY", FeedbackRouter);
 rootRoutes.use("/MoMo", MoMoRouter);
 
 

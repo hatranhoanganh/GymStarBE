@@ -3,7 +3,6 @@ import verifyToken from "../middleware/auth.middleware.js";
 import { addToCart,
 getCart,
 setCartQuantity,
-updateCartQuantity,
 deleteCartItem,
 deleteMultipleCartItems,
 
@@ -14,7 +13,7 @@ const CartRouter = express.Router();
 
 CartRouter.post("/ThemSanPhamVaoGioHang",verifyToken, addToCart);
 CartRouter.get("/XemGioHang",verifyToken, getCart);
-CartRouter.put("/CapNhatSoLuongGioHang1",verifyToken, updateCartQuantity);
+
 CartRouter.put("/CapNhatSoLuongGioHang2",verifyToken, setCartQuantity);
 CartRouter.delete("/XoaSanPhamKhoiGioHang",verifyToken, deleteCartItem);
 CartRouter.delete("/XoaNhieuSanPhamKhoiGioHang",verifyToken, deleteMultipleCartItems);

@@ -1,6 +1,6 @@
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
-import { Op } from "sequelize";
+import { Op,Sequelize } from "sequelize";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
@@ -388,7 +388,6 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // === 4. So sánh mật khẩu ===
     const isMatch = await bcrypt.compare(trimmedPassword, user.password);
     if (!isMatch) {
       return res.status(400).json({
@@ -397,27 +396,27 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // === 5. Tạo token (đã sửa đúng secret) ===
+   
     const accessToken = jwt.sign(
       {
         user_id: user.user_id,
         email: user.email,
         role_id: user.role?.role_id || 1,
       },
-      process.env.JWT_SECRET,          // Dùng chung secret với verify email (đúng chuẩn bạn đang dùng)
+      process.env.JWT_SECRET,          
       { expiresIn: "15d" }
     );
 
     const refreshToken = jwt.sign(
       { user_id: user.user_id },
-      process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET, // fallback nếu chưa có
+      process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET, 
       { expiresIn: "30d" }
     );
 
-    // === 6. Lưu refresh token vào DB (khuyến khích, để logout toàn bộ thiết bị sau) ===
+    
     await user.update({ refresh_token: refreshToken });
 
-    // === 7. Format dữ liệu trả về ===
+ 
     const formattedUser = {
       user_id: user.user_id,
       full_name: user.full_name,
@@ -432,7 +431,6 @@ const loginUser = async (req, res) => {
       updatedAt: formatVNDateTime(user.updatedAt),
     };
 
-    // === 8. Response thành công ===
     return res.status(200).json({
       success: true,
       message: "Đăng nhập thành công!",
@@ -1135,36 +1133,66 @@ const getUsersByStatus = async (req, res) => {
 const getUserByKeyword = async (req, res) => {
   try {
     const { keyword = "", page = 1, limit = 10 } = req.query;
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 10;
 
-    const whereCondition = keyword
-      ? {
-          [Op.or]: [
-            { full_name: { [Op.iLike]: `%${keyword}%` } },
-            { email: { [Op.iLike]: `%${keyword}%` } },
-          ],
-        }
-      : {};
+    const pageNum = parseInt(page, 10) || 1;
+    const pageSize = parseInt(limit, 10) || 10;
+    const searchTerm = `%${keyword.trim()}%`;
 
-    const totalUsers = await model.users.count({ where: whereCondition });
-    const totalPages = Math.ceil(totalUsers / pageSize);
+   
+    const searchCondition = {
+      [Op.or]: [
+      
+        Sequelize.where(
+          Sequelize.col("users.user_id"),
+          {
+            [Op.eq]: Number(keyword) || 0,
+          }
+        ),
 
-    if (totalUsers === 0) {
+        
+        Sequelize.where(
+          Sequelize.fn("unaccent", Sequelize.col("users.full_name")),
+          {
+            [Op.iLike]: Sequelize.fn("unaccent", searchTerm)
+          }
+        ),
+
+     
+        Sequelize.where(
+          Sequelize.fn("unaccent", Sequelize.col("users.email")),
+          {
+            [Op.iLike]: Sequelize.fn("unaccent", searchTerm)
+          }
+        )
+      ]
+    };
+
+  
+    const total = await model.users.count({
+      where: searchCondition,
+      distinct: true,
+      col: "user_id",
+    });
+
+    if (total === 0) {
       return res.status(200).json({
-        message: "Không có tài khoản nào.",
-        totalUsers: 0,
-        currentPage: 1,
-        totalPages: 0,
+        message: "Không có tài khoản phù hợp",
         data: [],
+        pagination: {
+          total: 0,
+          page: 1,
+          limit: pageSize,
+          totalPages: 0,
+        },
       });
     }
 
+    const totalPages = Math.ceil(total / pageSize);
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    const usersData = await model.users.findAll({
-      where: whereCondition,
+    
+    const users = await model.users.findAll({
       attributes: [
         "user_id",
         "full_name",
@@ -1174,6 +1202,7 @@ const getUserByKeyword = async (req, res) => {
         "createdAt",
         "updatedAt",
       ],
+      where: searchCondition,
       include: [
         {
           model: model.roles,
@@ -1181,35 +1210,43 @@ const getUserByKeyword = async (req, res) => {
           attributes: ["role_id", "role_name"],
         },
       ],
-      order: [["createdAt", "DESC"]],
-      offset,
       limit: pageSize,
+      offset,
+      order: [["createdAt", "DESC"]],
     });
 
-    const formattedData = usersData.map((user) => ({
-      user_id: user.user_id,
-      full_name: user.full_name,
-      email: user.email,
-      status: user.status,
-      birth_date: user.birth_date ? formatVNDate(user.birth_date) : null,
-      role_id: user.role?.role_id || null,
-      role_name: user.role?.role_name || null,
-      createdAt: formatVNDateTime(user.createdAt),
-      updatedAt: formatVNDateTime(user.updatedAt),
+  
+    const formattedData = users.map((u) => ({
+      user_id: u.user_id,
+      full_name: u.full_name,
+      email: u.email,
+      status: u.status,
+      birth_date: u.birth_date ? formatVNDate(u.birth_date) : null,
+      role_id: u.role?.role_id || null,
+      role_name: u.role?.role_name || null,
+      createdAt: formatVNDateTime(u.createdAt),
+      updatedAt: formatVNDateTime(u.updatedAt),
     }));
 
     return res.status(200).json({
-      message: "Lấy danh sách người dùng thành công",
-      totalUsers,
-      currentPage: validPage,
-      totalPages,
+      message: "Tìm kiếm tài khoản thành công",
       data: formattedData,
+      pagination: {
+        total,
+        page: validPage,
+        limit: pageSize,
+        totalPages,
+      },
     });
   } catch (error) {
-    console.error("Lỗi tìm kiếm người dùng:", error);
-    return res.status(500).json({ message: "Lỗi server" });
+    console.error("Lỗi getUserByKeyword:", error);
+    return res.status(500).json({
+      message: "Lỗi server",
+      error: error.message,
+    });
   }
 };
+
 
 const assignUserRole = async (req, res) => {
   try {

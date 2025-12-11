@@ -22,171 +22,116 @@ const placeDirectOrder = async (req, res) => {
     const user_id = req.user.user_id;
     const { product_variant_id, quantity = 1, note, address_id, method } = req.body;
 
-    if (!product_variant_id || !method) {
+    if (!product_variant_id || !method)
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
-    }
 
     const finalQuantity = parseInt(quantity);
-    if (isNaN(finalQuantity) || finalQuantity < 1) {
+    if (isNaN(finalQuantity) || finalQuantity < 1)
       return res.status(400).json({ message: "Số lượng không hợp lệ" });
-    }
 
-    // Lấy địa chỉ
-    let address = address_id
+    
+    const address = address_id
       ? await model.user_addresses.findOne({ where: { address_id, user_id } })
       : await model.user_addresses.findOne({ where: { user_id, is_default: true } });
+    if (!address) return res.status(400).json({ message: "Địa chỉ không tồn tại" });
 
-    if (!address)
-      return res.status(400).json({ message: "Địa chỉ không tồn tại" });
-
-    // Lấy variant sản phẩm
+   
     const variant = await model.product_variants.findByPk(product_variant_id, {
       include: [{ model: model.products, as: "product" }],
       transaction: t,
     });
-    if (!variant)
-      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
-    if (variant.stock < finalQuantity) {
+    if (!variant) return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+    if (variant.stock < finalQuantity)
       return res.status(400).json({ message: "Hết hàng hoặc không đủ số lượng" });
-    }
 
+ 
     const price = Number(variant.product.price);
     const discount = Number(variant.product.discount || 0);
-    const finalPrice = Number((price * (1 - discount / 100)).toFixed(0));
+    const finalPrice = Math.round(price * (1 - discount / 100));
     const totalAmount = finalPrice * finalQuantity;
 
-    // Xử lý COD
-    if (method === "COD") {
-      const newOrder = await model.orders.create(
-        {
-          user_id,
-          total: totalAmount,
-          note,
-          receiver_name: address.receiver_name,
-          phone: address.phone,
-          address_detail: address.address_detail,
-          status: "chờ xác nhận",
-        },
-        { transaction: t }
-      );
+    
+    const newOrder = await model.orders.create({
+      user_id,
+      total: totalAmount,
+      note,
+      received_date: null,
+      receiver_name: address.receiver_name,
+      phone: address.phone,
+      address_detail: address.address_detail,
+      status: "chờ xác nhận",
+    }, { transaction: t });
 
-      await model.order_details.create(
-        {
-          order_id: newOrder.order_id,
-          product_variant_id,
-          quantity: finalQuantity,
-          price: finalPrice,
-          original_price: price,
-        },
-        { transaction: t }
-      );
+   
+    await model.order_details.create({
+      order_id: newOrder.order_id,
+      product_variant_id,
+      quantity: finalQuantity,
+      price: finalPrice,
+      original_price: price,
+    }, { transaction: t });
 
-      await model.payments.create(
-        {
-          order_id: newOrder.order_id,
-          method: "COD",
-          total: totalAmount,
-          status: "đang chờ",
-        },
-        { transaction: t }
-      );
+   
+    await model.product_variants.decrement("stock", {
+      by: finalQuantity,
+      where: { product_variant_id },
+      transaction: t,
+    });
 
-      await model.product_variants.decrement("stock", {
-        by: finalQuantity,
-        where: { product_variant_id },
-        transaction: t,
-      });
+   
+    const payment = await model.payments.create({
+      order_id: newOrder.order_id,
+      method,
+      total: totalAmount,
+      status: "đang chờ",
+      payment_date: null,
+    }, { transaction: t });
 
-      await t.commit();
+    await t.commit();
 
-      return res.json({
-        message: "Đặt hàng COD thành công",
-        order_id: newOrder.order_id,
-      });
-    }
-
-    // Xử lý MoMo
+    
     if (method === "MOMO") {
-      const newOrder = await model.orders.create(
-        {
-          user_id,
-          total: totalAmount,
-          note,
-          receiver_name: address.receiver_name,
-          phone: address.phone,
-          address_detail: address.address_detail,
-          status: "chờ xác nhận",
-        },
-        { transaction: t }
-      );
-
-      await model.order_details.create(
-        {
-          order_id: newOrder.order_id,
-          product_variant_id,
-          quantity: finalQuantity,
-          price: finalPrice,
-          original_price: price,
-        },
-        { transaction: t }
-      );
-
-      await model.payments.create(
-        {
-          order_id: newOrder.order_id,
-          method: "MOMO",
-          total: totalAmount,
-          status: "đang chờ",
-        },
-        { transaction: t }
-      );
-
-      await model.product_variants.decrement("stock", {
-        by: finalQuantity,
-        where: { product_variant_id },
-        transaction: t,
-      });
-
-      await t.commit();
-
       let momoResult;
       try {
         momoResult = await prepareMomoPayment(newOrder.order_id);
+        return res.json({
+          message: "Chuyển sang thanh toán MoMo",
+          order_id: newOrder.order_id,
+          payment: {
+            payment_id: payment.payment_id,
+            method: payment.method,
+            status: payment.status,
+            total: payment.total,
+          },
+          payUrl: momoResult.payUrl,
+        });
       } catch (error) {
-        console.error("Lỗi gọi MoMo → hủy đơn và hoàn stock");
+        console.error("Lỗi kết nối MoMo → hủy đơn và hoàn stock");
+
+        
+        await model.payments.destroy({ where: { order_id: newOrder.order_id } });
+
+       
         await cancelOrderAndRestoreStock(newOrder.order_id);
+
         return res.status(500).json({
-          message:
-            "Lỗi kết nối MoMo. Đơn hàng đã được hủy và hoàn lại hàng tồn kho.",
+          message: "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hoàn lại hàng tồn kho.",
         });
       }
-
-      setTimeout(async () => {
-        try {
-          const payment = await model.payments.findOne({
-            where: {
-              order_id: newOrder.order_id,
-              method: "MOMO",
-              status: "đang chờ",
-            },
-          });
-          if (payment) {
-            await cancelOrderAndRestoreStock(newOrder.order_id);
-            console.log(`Đơn MoMo #${newOrder.order_id} tự động hủy do khách thoát`);
-          }
-        } catch (err) {
-          console.error("Lỗi tự động hủy đơn MoMo:", err);
-        }
-      }, 60 * 1000);
-
-      return res.json({
-        message: "Chuyển sang thanh toán MoMo",
-        order_id: newOrder.order_id,
-        payUrl: momoResult.payUrl,
-      });
     }
 
-    return res.status(400).json({ message: "Phương thức thanh toán không hỗ trợ" });
+   
+    return res.json({
+      message: "Đặt hàng COD thành công",
+      order_id: newOrder.order_id,
+      payment: {
+        payment_id: payment.payment_id,
+        method: payment.method,
+        status: payment.status,
+        total: payment.total,
+      },
+    });
+
   } catch (error) {
     if (t && !t.finished) await t.rollback();
     console.error("Lỗi placeDirectOrder:", error);
@@ -195,40 +140,52 @@ const placeDirectOrder = async (req, res) => {
 };
 
 
+
+
 const placeCartOrder = async (req, res) => {
   let t;
   try {
     t = await sequelize.transaction();
 
-    const user_id = req.user.user_id; 
-    const { cart_item_ids, address_id, note, method } = req.body;
+    const user_id = req.user.user_id;
+    const { cart_detail_ids, address_id, note, method } = req.body;
 
-    if (!cart_item_ids || !Array.isArray(cart_item_ids) || cart_item_ids.length === 0)
+    
+    if (!cart_detail_ids || !Array.isArray(cart_detail_ids) || cart_detail_ids.length === 0) {
       return res.status(400).json({ message: "Vui lòng chọn sản phẩm" });
-    if (!method)
-      return res.status(400).json({ message: "Chọn phương thức thanh toán" });
+    }
 
+    if (!method) {
+      return res.status(400).json({ message: "Vui lòng chọn phương thức thanh toán" });
+    }
+
+    if (!["COD", "MOMO"].includes(method)) {
+      return res.status(400).json({ message: "Phương thức thanh toán không hỗ trợ" });
+    }
+
+   
     let address = address_id
       ? await model.user_addresses.findOne({ where: { address_id, user_id } })
       : await model.user_addresses.findOne({ where: { user_id, is_default: true } });
 
-    if (!address)
+    if (!address) {
       return res.status(400).json({ message: "Chưa có địa chỉ giao hàng" });
+    }
 
-    const cartItems = await model.carts.findAll({
-      where: { cart_id: cart_item_ids, user_id },
+   
+    const cartItems = await model.cart_details.findAll({
+      where: { cart_detail_id: cart_detail_ids },
       include: [
+        {
+          model: model.carts,
+          as: "cart",
+          where: { user_id },
+          attributes: ["cart_id"],
+        },
         {
           model: model.product_variants,
           as: "product_variant",
-          attributes: [
-            "product_variant_id",
-            "color",
-            "size",
-            "sku",
-            "stock",
-            "product_id",
-          ],
+          attributes: ["product_variant_id", "color", "size", "sku", "stock", "product_id"],
           include: [
             {
               model: model.products,
@@ -243,34 +200,32 @@ const placeCartOrder = async (req, res) => {
 
     if (cartItems.length === 0) {
       await t.rollback();
-      return res.status(404).json({ message: "Giỏ hàng trống" });
+      return res.status(404).json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
     }
 
     let total = 0;
     const orderDetailsInput = [];
 
+    
     for (const item of cartItems) {
       const variant = item.product_variant;
       const product = variant.product;
 
-      const locked = await model.product_variants.findByPk(
-        variant.product_variant_id,
-        {
-          transaction: t,
-          lock: t.LOCK.UPDATE,
-        }
-      );
+      const locked = await model.product_variants.findByPk(variant.product_variant_id, {
+        transaction: t,
+        lock: t.LOCK.UPDATE,
+      });
 
       if (!locked || locked.stock < item.quantity) {
         await t.rollback();
-        return res
-          .status(400)
-          .json({ message: `Sản phẩm "${product.name}" không đủ hàng` });
+        return res.status(400).json({
+          message: `Sản phẩm "${product.name}" (${variant.color || ""} ${variant.size || ""}) không đủ hàng`,
+        });
       }
 
       const price = Number(product.price);
       const discount = Number(product.discount || 0);
-      const finalPrice = Number((price * (1 - discount / 100)).toFixed(0));
+      const finalPrice = Math.round(price * (1 - discount / 100));
       total += finalPrice * item.quantity;
 
       orderDetailsInput.push({
@@ -281,136 +236,118 @@ const placeCartOrder = async (req, res) => {
       });
     }
 
-    if (method === "COD") {
-      const order = await model.orders.create(
-        {
-          user_id,
-          total,
-          note,
-          receiver_name: address.receiver_name,
-          phone: address.phone,
-          address_detail: address.address_detail,
-          status: "chờ xác nhận",
-        },
-        { transaction: t }
-      );
+  
+    const order = await model.orders.create(
+      {
+        user_id,
+        total,
+        note,
+        received_date: null,
+        receiver_name: address.receiver_name,
+        phone: address.phone,
+        address_detail: address.address_detail,
+        status: "chờ xác nhận",
+      },
+      { transaction: t }
+    );
 
-      await model.order_details.bulkCreate(
-        orderDetailsInput.map((d) => ({ ...d, order_id: order.order_id })),
-        { transaction: t }
-      );
+   
+    await model.order_details.bulkCreate(
+      orderDetailsInput.map((d) => ({ ...d, order_id: order.order_id })),
+      { transaction: t }
+    );
 
-      await model.payments.create(
-        {
-          order_id: order.order_id,
-          method: "COD",
-          total,
-          status: "đang chờ",
-        },
-        { transaction: t }
-      );
-
-      for (const item of cartItems) {
-        await model.product_variants.decrement("stock", {
-          by: item.quantity,
-          where: { product_variant_id: item.product_variant_id },
-          transaction: t,
-        });
-      }
-
-      await model.carts.destroy({
-        where: { cart_id: cart_item_ids, user_id },
+    
+    for (const item of cartItems) {
+      await model.product_variants.decrement("stock", {
+        by: item.quantity,
+        where: { product_variant_id: item.product_variant_id },
         transaction: t,
       });
+    }
 
-      await t.commit();
+  
+    await model.cart_details.destroy({
+      where: { cart_detail_id: cart_detail_ids },
+      transaction: t,
+    });
 
+ 
+    await model.payments.create(
+      {
+        order_id: order.order_id,
+        method,
+        total,
+        status: "đang chờ",
+        payment_date: null,
+      },
+      { transaction: t }
+    );
+
+    await t.commit();
+
+
+    const payment = await model.payments.findOne({
+      where: { order_id: order.order_id },
+    });
+
+  
+    if (method === "COD") {
       return res.json({
         message: "Đặt hàng COD thành công",
         order_id: order.order_id,
+        payment: {
+          payment_id: payment.payment_id,
+          method: payment.method,
+          status: payment.status,
+          total: payment.total,
+        },
       });
     }
 
     if (method === "MOMO") {
-      const order = await model.orders.create(
-        {
-          user_id,
-          total,
-          note,
-          receiver_name: address.receiver_name,
-          phone: address.phone,
-          address_detail: address.address_detail,
-          status: "chờ xác nhận",
-        },
-        { transaction: t }
-      );
-
-      await model.order_details.bulkCreate(
-        orderDetailsInput.map((d) => ({ ...d, order_id: order.order_id })),
-        { transaction: t }
-      );
-
-      await model.payments.create(
-        {
-          order_id: order.order_id,
-          method: "MOMO",
-          total,
-          status: "đang chờ",
-        },
-        { transaction: t }
-      );
-
-      for (const item of cartItems) {
-        await model.product_variants.decrement("stock", {
-          by: item.quantity,
-          where: { product_variant_id: item.product_variant_id },
-          transaction: t,
-        });
-      }
-
-      await model.carts.destroy({
-        where: { cart_id: cart_item_ids, user_id },
-        transaction: t,
-      });
-
-      await t.commit();
-
-      let momoResult;
       try {
-        momoResult = await prepareMomoPayment(order.order_id);
-      } catch (err) {
-        await cancelOrderAndRestoreStock(order.order_id);
-        return res.status(500).json({ message: "Lỗi MoMo → đơn đã hủy" });
-      }
+        const momoResult = await prepareMomoPayment(order.order_id);
 
-      setTimeout(async () => {
-        const p = await model.payments.findOne({
-          where: {
-            order_id: order.order_id,
-            method: "MOMO",
-            status: "đang chờ",
+        return res.json({
+          message: "Chuyển sang thanh toán MoMo",
+          order_id: order.order_id,
+          payment: {
+            payment_id: payment.payment_id,
+            method: payment.method,
+            status: payment.status,
+            total: payment.total,
           },
+          payUrl: momoResult.payUrl,
         });
-        if (p) {
-          await cancelOrderAndRestoreStock(order.order_id);
-          console.log(`Đơn #${order.order_id} tự động hủy (khách thoát)`);
-        }
-      }, 60 * 1000);
+      } catch (err) {
+        console.error("Lỗi tạo link MoMo trong placeCartOrder → hủy đơn ngay lập tức", err);
 
-      return res.json({
-        message: "Chuyển sang MoMo",
-        order_id: order.order_id,
-        payUrl: momoResult.payUrl,
-      });
+        try {
+          
+          await model.payments.destroy({ where: { order_id: order.order_id } });
+        } catch (destroyErr) {
+          console.error("Lỗi khi xóa payment trong hủy đơn:", destroyErr);
+        }
+
+        
+        await cancelOrderAndRestoreStock(order.order_id);
+
+        return res.status(500).json({
+          message: "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hàng tồn kho đã được hoàn lại.",
+        });
+      }
     }
 
-    return res.status(400).json({ message: "Phương thức không hỗ trợ" });
+    return res.status(400).json({ message: "Phương thức thanh toán không hỗ trợ" });
   } catch (error) {
     if (t && !t.finished) await t.rollback();
     console.error("Lỗi placeCartOrder:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
 
 const getOrdersByStatus = async (req, res) => {
   try {
@@ -528,11 +465,11 @@ const getOrderDetail = async (req, res) => {
       return res.status(400).json({ message: "Thiếu order_id" });
     }
 
-    // Lấy thông tin người dùng từ token
+  
     const role = req.user.role_name;  
     const currentUserId = req.user.user_id;
 
-    // Lấy đơn hàng
+ 
     const order = await model.orders.findOne({
       where: { order_id },
       attributes: [
@@ -585,7 +522,7 @@ const getOrderDetail = async (req, res) => {
     }
 
 
-    const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"];
+    const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"]; 
     if (!allowedFullAccessRoles.includes(role)) {
       if (order.user_id !== currentUserId) {
         return res.status(403).json({
@@ -594,7 +531,7 @@ const getOrderDetail = async (req, res) => {
       }
     }
 
-    // Format dữ liệu trả về
+    
     const formattedData = {
       order_id: order.order_id,
       order_date: formatVNDateTime(order.order_date),
@@ -616,13 +553,20 @@ const getOrderDetail = async (req, res) => {
             status: order.user.status,
           }
         : null,
-      payments: order.payments?.map((p) => ({
-        payment_id: p.payment_id,
-        method: p.method,
-        total: Number(p.total),
-        status: p.status,
-        payment_date: p.payment_date ? formatVNDateTime(p.payment_date) : null,
-      })) || [],
+     payments: order.payment
+  ? [
+      {
+        payment_id: order.payment.payment_id,
+        method: order.payment.method,
+        total: Number(order.payment.total),
+        status: order.payment.status,
+        payment_date: order.payment.payment_date
+          ? formatVNDateTime(order.payment.payment_date)
+          : null,
+      },
+    ]
+  : [],
+
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
@@ -664,11 +608,10 @@ const cancelOrder = async (req, res) => {
     const { user_id } = req.user; 
 
     if (!reason) {
-      await t.rollback();
+   
       return res.status(400).json({ message: "Vui lòng chọn lý do hủy đơn hàng" });
     }
 
-    // Lấy order theo order_id
     const order = await model.orders.findOne({
       where: { order_id: Number(order_id), user_id }, 
       include: [
@@ -686,35 +629,41 @@ const cancelOrder = async (req, res) => {
     });
 
     if (!order) {
-      await t.rollback();
+      
       return res.status(404).json({ message: "Đơn hàng không tồn tại hoặc không thuộc quyền của bạn" });
+    }
+
+    
+    if (order.payment && order.payment.method === "MOMO") {
+      return res.status(400).json({
+        message: "Đơn hàng thanh toán bằng phương thức MOMO nên không thể hủy nếu đã thanh toán thành công, nếu đơn chưa thanh toán thì sau 15 phút đơn sẽ tự hủy.",
+      });
     }
 
     const allowed = ["chờ xác nhận", "đã xác nhận", "đang xử lý"];
     if (!allowed.includes(order.status)) {
-      await t.rollback();
+   
       return res.status(400).json({
         message: `Đơn hàng đang ở trạng thái "${order.status}", không thể hủy`,
       });
     }
 
-    // Cập nhật trạng thái đơn
+    
+
     await order.update({ status: "đã hủy" }, { transaction: t });
 
-    // Cập nhật payment
-    if (order.payment) {
-      const updateData = { status: "thất bại" };
-      if (order.payment.method === "COD") updateData.payment_date = sequelize.fn("NOW");
-      await order.payment.update(updateData, { transaction: t });
-    }
+   if (order.payment) {
+  await order.payment.update(
+    { status: "thất bại" },
+    { transaction: t }
+  );
+}
 
-    // Lưu lý do hủy
     await model.reason_cancel.create(
       { order_id: order.order_id, reason: reason.trim() },
       { transaction: t }
     );
 
-    // Hoàn lại stock
     for (const detail of order.order_details) {
       await detail.product_variant.increment("stock", {
         by: detail.quantity,
@@ -1008,28 +957,10 @@ const getAllOrders = async (req, res) => {
   }
 };
 const updateOrderStatus = async (req, res) => {
-  const t = await req.sequelize.transaction();
+  const t = await sequelize.transaction();
   try {
     const { order_id } = req.params;
-    const { status } = req.body;
-
-    if (!status) {
-      return res.status(400).json({ message: "Vui lòng chọn trạng thái mới" });
-    }
-
-    const validStatuses = [
-      "chờ xác nhận",
-      "đã xác nhận",
-      "đang xử lý",
-      "đang giao",
-      "đã giao",
-      "giao thất bại",
-      "đổi hàng",
-    ];
-
-    if (!validStatuses.includes(status)) {
-      return res.status(400).json({ message: "Trạng thái không hợp lệ" });
-    }
+    const { status: requestedStatus } = req.body;
 
     const order = await model.orders.findByPk(order_id, {
       include: [
@@ -1050,7 +981,6 @@ const updateOrderStatus = async (req, res) => {
 
     const current = order.status;
 
-    // === QUY TẮC CHUYỂN TRẠNG THÁI NGHIÊM NGẶT ===
     const allowedTransitions = {
       "chờ xác nhận": ["đã xác nhận"],
       "đã xác nhận": ["đang xử lý"],
@@ -1061,28 +991,40 @@ const updateOrderStatus = async (req, res) => {
       "đổi hàng": [],
     };
 
-    if (!allowedTransitions[current].includes(status)) {
+    let nextStatus;
+
+   
+    if (!allowedTransitions[current] || allowedTransitions[current].length === 0) {
       await t.rollback();
-      return res.status(400).json({
-        message: "Không được phép chuyển trạng thái này",
-        current_status: current,
-        requested_status: status,
-        allowed: allowedTransitions[current],
+      return res.status(400).json({ 
+        message: `Đơn hàng đang ở trạng thái cuối "${current}", không thể cập nhật tiếp` 
       });
     }
 
-    if (status === "đã giao") {
+    if (current === "đang giao") {
+      if (!requestedStatus || !allowedTransitions[current].includes(requestedStatus)) {
+        await t.rollback();
+        return res.status(400).json({
+          message: 'Khi trạng thái là "đang giao", phải truyền "đã giao" hoặc "giao thất bại"',
+        });
+      }
+      nextStatus = requestedStatus;
+    } else {
+      
+      nextStatus = allowedTransitions[current][0];
+    }
+
+
+    if (nextStatus === "đã giao") {
       order.received_date = new Date();
       order.payment.status = "thành công";
       order.payment.payment_date = new Date();
     }
 
-    if (status === "giao thất bại" || status === "đổi hàng") {
+    if (nextStatus === "giao thất bại" || nextStatus === "đổi hàng") {
       order.payment.status = "thất bại";
       order.payment.payment_date = null;
-    }
 
-    if (status === "đổi hàng" || status === "giao thất bại") {
       for (const detail of order.order_details) {
         await detail.product_variant.increment("stock", {
           by: detail.quantity,
@@ -1091,7 +1033,7 @@ const updateOrderStatus = async (req, res) => {
       }
     }
 
-    order.status = status;
+    order.status = nextStatus;
     await order.save({ transaction: t });
     await order.payment.save({ transaction: t });
 
@@ -1101,11 +1043,10 @@ const updateOrderStatus = async (req, res) => {
       message: "Cập nhật trạng thái thành công",
       data: {
         order_id: order.order_id,
-        old_status: current,
-        new_status: status,
+        new_status: nextStatus,
         payment_status: order.payment.status,
-        stock_restored: status === "đổi hàng",
-        received_date: order.received_date,
+        stock_restored: nextStatus === "đổi hàng" || nextStatus === "giao thất bại",
+        received_date: formatVNDateTime(order.received_date),
       },
     });
   } catch (error) {
@@ -1114,6 +1055,8 @@ const updateOrderStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
 
 export {
   placeDirectOrder,

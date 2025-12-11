@@ -68,8 +68,8 @@ ProductRouter.get(
   getProductByKeyWordAdmin
 );
 
-ProductRouter.put("/CapNhatTrangThaiSanPham/:id",  verifyToken,
-  requireRole("Quản trị viên", "Quản lý sản phẩm"),updateProductStatus);
+ProductRouter.put("/CapNhatTrangThaiSanPham/:product_id",  verifyToken,
+  requireRole("Quản trị viên"),updateProductStatus);
 ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),getProductsByStatus);
 ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,

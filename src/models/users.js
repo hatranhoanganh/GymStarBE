@@ -38,7 +38,7 @@ export default class users extends Model {
         birth_date: {
           type: DataTypes.DATEONLY,
           allowNull: true,
-          field: "birth_date", // QUAN TRỌNG: map birthDate ↔ birth_date
+          field: "birth_date",
         },
         status: {
           type: DataTypes.STRING(20),
@@ -51,7 +51,7 @@ export default class users extends Model {
         },
         role_id: {
           type: DataTypes.INTEGER,
-          allowNull: true, // hoặc false nếu bạn bắt buộc user phải có role
+          allowNull: true, 
           field: "role_id",
         },
       },
@@ -60,7 +60,7 @@ export default class users extends Model {
         tableName: "users",
         schema: "public",
         timestamps: true,
-        underscored: true, // TỰ ĐỘNG: createdAt → created_at
+        underscored: true, 
         indexes: [
           {
             name: "users_pkey",

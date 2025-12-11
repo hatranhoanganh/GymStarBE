@@ -2,6 +2,8 @@ import dotenv from "dotenv";
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 import axios from "axios";
+import cron from "node-cron"; 
+import { Op } from "sequelize";
 import { createHmac } from "crypto";
 
 dotenv.config();
@@ -16,6 +18,33 @@ const ipnUrl =
   "https://unblockaded-argentina-habitable.ngrok-free.dev/MoMo/callback-payment";
 const requestType = "payWithMethod";
 
+cron.schedule("* * * * *", async () => {
+  const now = new Date();
+  const expiredOrders = await model.orders.findAll({
+    where: {
+      status: "chờ xác nhận", 
+      order_date: { [Op.lt]: new Date(now - 15 * 60 * 1000) }
+    },
+    include: [
+      {
+        model: model.payments,
+        as: "payment", 
+        where: {
+          method: "MOMO",
+          status: { [Op.not]: "thành công" }
+        },
+        required: true
+      }
+    ]
+  });
+
+  for (const order of expiredOrders) {
+    await cancelOrderAndRestoreStock(order.order_id);
+    console.log(`Đơn MoMo #${order.order_id} quá hạn 15 phút → đã hủy và hoàn stock`);
+  }
+});
+
+
 const createMoMoSignature = (params) => {
   return Object.keys(params)
     .sort()
@@ -25,7 +54,6 @@ const createMoMoSignature = (params) => {
 
 export const updatePayment = async (req, res) => {
   console.log("MoMo IPN nhận được:", req.body);
-
   try {
     const {
       partnerCode,
@@ -43,7 +71,7 @@ export const updatePayment = async (req, res) => {
       signature,
     } = req.body;
 
-    // Xác thực chữ ký
+  
     const rawSignature = [
       `accessKey=${accessKey}`,
       `amount=${amount}`,
@@ -71,18 +99,12 @@ export const updatePayment = async (req, res) => {
     const order_id = JSON.parse(extraData || "{}").order_id;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    const [order, payment] = await Promise.all([
-      model.orders.findOne({ where: { order_id } }),
-      model.payments.findOne({ where: { order_id, method: "MOMO" } }),
-    ]);
+    const payment = await model.payments.findOne({
+      where: { order_id, method: "MOMO" },
+    });
+    if (!payment) return res.status(404).json({ message: "Không tìm thấy đơn" });
 
-    if (!order || !payment)
-      return res.status(404).json({ message: "Không tìm thấy đơn" });
-
-    
-    if (payment.status === "thành công") {
-      return res.json({ resultCode: 0, message: "Already processed" });
-    }
+    if (payment.status === "thành công") return res.json({ resultCode: 0, message: "Already processed" });
 
     if (resultCode == 0) {
       await payment.update({
@@ -90,12 +112,11 @@ export const updatePayment = async (req, res) => {
         payment_date: new Date(Number(responseTime)),
         trans_id: transId?.toString(),
       });
-      console.log(`ĐƠN #${order_id} THANH TOÁN THÀNH CÔNG QUA MOMO`);
     } else {
-      console.log(
-        `MoMo báo thất bại (resultCode=${resultCode}) → sẽ tự xóa sau 1 phút`
-      );
-     //KHÔNG GỌI cancelOrderAndRestoreStock ở đây nữa!
+      await payment.update({
+        status: "thất bại",
+        payment_date: null,
+      });
     }
 
     return res.json({ resultCode: 0, message: "OK" });
@@ -111,12 +132,12 @@ export const handlePaymentRequest = async (req, res) => {
     const { order_id } = req.body;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    // Kiểm tra đơn có tồn tại chưa (phải do placeDirectOrder hoặc placeCartOrder tạo)
+    
     let order = await model.orders.findOne({ where: { order_id } });
     if (!order)
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
-    // Chặn nếu đã thanh toán thành công hoặc đã hủy
+
     const existingPayment = await model.payments.findOne({
       where: { order_id, method: "MOMO" },
     });
@@ -126,7 +147,7 @@ export const handlePaymentRequest = async (req, res) => {
         .json({ message: "Đơn hàng đã thanh toán thành công!" });
     }
 
-    // Nếu chưa có payment MoMo → tạo mới
+  
     if (!existingPayment) {
       await model.payments.create(
         {
@@ -142,7 +163,7 @@ export const handlePaymentRequest = async (req, res) => {
       await existingPayment.update({ status: "đang chờ" }, { transaction: t });
     }
 
-    // Tạo link MoMo
+
     const amount = Math.round(Number(order.total)).toString();
     const momoOrderId = `${order_id}_${Date.now()}`;
     const requestId = momoOrderId;
@@ -187,22 +208,8 @@ export const handlePaymentRequest = async (req, res) => {
 
     await t.commit();
 
-    // TỰ ĐỘNG HỦY ĐƠN SAU 1 PHÚT NẾU KHÁCH THOÁT
-    setTimeout(async () => {
-      try {
-        const payment = await model.payments.findOne({
-          where: { order_id, method: "MOMO", status: "đang chờ" },
-        });
-        if (payment) {
-          await cancelOrderAndRestoreStock(order_id);
-          console.log(
-            `Đơn #${order_id} tự động hủy do khách thoát MoMo (1 phút)`
-          );
-        }
-      } catch (err) {
-        console.error("Lỗi tự động hủy:", err);
-      }
-    }, 1 * 60 * 1000 + 30 * 1000);
+
+   
 
     return res.json({
       message: "Tạo link MoMo thành công",
@@ -224,15 +231,15 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   try {
     t = await sequelize.transaction();
 
-    // Lấy chi tiết đơn để hoàn stock
+   
     const details = await model.order_details.findAll({
       where: { order_id },
       attributes: ["product_variant_id", "quantity"],
       transaction: t,
-      lock: t.LOCK.UPDATE, // tránh race condition
+      lock: t.LOCK.UPDATE, 
     });
 
-    // Hoàn lại số lượng tồn kho
+    
     for (const item of details) {
       await model.product_variants.increment("stock", {
         by: item.quantity,
@@ -241,25 +248,26 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       });
     }
 
-    // Xóa sạch dữ liệu đơn hàng
-    await Promise.all([
-      model.payments.destroy({ where: { order_id }, transaction: t }),
-      model.order_details.destroy({ where: { order_id }, transaction: t }),
-      model.orders.destroy({ where: { order_id }, transaction: t }),
-    ]);
+  
+    await model.payments.update(
+      { status: "thất bại", payment_date: null },
+      { where: { order_id }, transaction: t }
+    );
+
+  
+    await model.orders.update(
+      { status: "đã hủy" },
+      { where: { order_id }, transaction: t }
+    );
 
     await t.commit();
-    console.log(
-      `Đơn #${order_id} đã được HỦY HOÀN TOÀN + hoàn stock thành công`
-    );
+    console.log(`Đơn #${order_id} đã thanh toán thất bại + hoàn stock thành công (dữ liệu giữ nguyên)`);
   } catch (err) {
-    if (t && !t.finished) {
-      await t.rollback();
-    }
+    if (t && !t.finished) await t.rollback();
     console.error(`Lỗi khi hủy đơn #${order_id}:`, err);
-    // Không throw ra ngoài → hàm này chỉ dùng nội bộ
   }
 };
+
 
 export const retryPayment = async (req, res) => {
   try {

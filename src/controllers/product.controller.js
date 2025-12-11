@@ -1703,12 +1703,12 @@ const getProductByKeyWordUser = async (req, res) => {
 
 const updateProductStatus = async (req, res) => {
   try {
-    const { id } = req.params;
-    if (!id) {
+    const { product_id } = req.params;
+    if (!product_id) {
       return res.status(400).json({ message: "Chưa cung cấp product_id" });
     }
 
-    const product = await model.products.findByPk(id, {
+    const product = await model.products.findByPk(product_id, {
       include: [
         { model: model.categories, as: "category", attributes: ["name"] },
       ],

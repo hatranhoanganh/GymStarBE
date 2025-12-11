@@ -18,6 +18,7 @@ import _reviews from "./reviews.js";
 import _user_addresses from "./user_addresses.js";
 import _users from "./users.js";
 import _roles from "./roles.js";
+import _cart_details from "./cart_details.js";
 
 
 export default function initModels(sequelize) {
@@ -39,6 +40,7 @@ export default function initModels(sequelize) {
   const user_addresses = _user_addresses.init(sequelize, DataTypes);
   const users = _users.init(sequelize, DataTypes);
   const roles = _roles.init(sequelize, DataTypes);
+  const cart_details = _cart_details.init(sequelize, DataTypes);
 
 
  
@@ -63,8 +65,8 @@ export default function initModels(sequelize) {
   reason_cancel.belongsTo(orders, { as: "order", foreignKey: "order_id" });
   orders.hasOne(reason_cancel, { as: "reason_cancel", foreignKey: "order_id" });
 
-  carts.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
-  product_variants.hasMany(carts, { as: "carts", foreignKey: "product_variant_id" });
+  carts.hasMany(cart_details, { as: "cart_details", foreignKey: "cart_id" });
+cart_details.belongsTo(carts, { as: "cart", foreignKey: "cart_id" });
 
   order_details.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
   product_variants.hasMany(order_details, { as: "order_details", foreignKey: "product_variant_id" });
@@ -82,7 +84,7 @@ export default function initModels(sequelize) {
   reviews.hasOne(review_reply, { as: "review_reply", foreignKey: "review_id" });
 
   carts.belongsTo(users, { as: "user", foreignKey: "user_id" });
-  users.hasMany(carts, { as: "carts", foreignKey: "user_id" });
+users.hasOne(carts, { as: "cart", foreignKey: "user_id" });
 
   feedback_reply.belongsTo(users, { as: "user", foreignKey: "user_id" });
   users.hasMany(feedback_reply, { as: "feedback_replies", foreignKey: "user_id" });
@@ -102,10 +104,15 @@ export default function initModels(sequelize) {
 users.belongsTo(roles, { as: "role", foreignKey: "role_id" });
 roles.hasMany(users, { as: "users", foreignKey: "role_id" });
 
+cart_details.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
+product_variants.hasMany(cart_details, { as: "cart_details", foreignKey: "product_variant_id" });
+
+
 
 
   return {
     carts,
+    cart_details,
     categories,
     feedback_reply,
     feedbacks,
