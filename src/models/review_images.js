@@ -21,17 +21,14 @@ export default class review_images extends Model {
     image: {
       type: DataTypes.STRING(255),
       allowNull: false
-    },
-    is_visible: {
-      type: DataTypes.BOOLEAN,
-      allowNull: true,
-      defaultValue: true
     }
   }, {
     sequelize,
     tableName: 'review_images',
     schema: 'public',
-    timestamps: true,
+     timestamps: true,
+  updatedAt: false, 
+  underscored: true,
     indexes: [
       {
         name: "review_images_pkey",

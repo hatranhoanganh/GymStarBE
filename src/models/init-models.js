@@ -54,7 +54,7 @@ export default function initModels(sequelize) {
   feedbacks.hasOne(feedback_reply, { as: "feedback_reply", foreignKey: "feedback_id" });
 
   reviews.belongsTo(order_details, { as: "order_detail", foreignKey: "order_detail_id" });
-  order_details.hasMany(reviews, { as: "reviews", foreignKey: "order_detail_id" });
+  order_details.hasOne(reviews, { as: "review", foreignKey: "order_detail_id" });
 
   order_details.belongsTo(orders, { as: "order", foreignKey: "order_id" });
   orders.hasMany(order_details, { as: "order_details", foreignKey: "order_id" });
@@ -66,7 +66,7 @@ export default function initModels(sequelize) {
   orders.hasOne(reason_cancel, { as: "reason_cancel", foreignKey: "order_id" });
 
   carts.hasMany(cart_details, { as: "cart_details", foreignKey: "cart_id" });
-cart_details.belongsTo(carts, { as: "cart", foreignKey: "cart_id" });
+ cart_details.belongsTo(carts, { as: "cart", foreignKey: "cart_id" });
 
   order_details.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
   product_variants.hasMany(order_details, { as: "order_details", foreignKey: "product_variant_id" });

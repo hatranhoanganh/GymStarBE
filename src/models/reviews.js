@@ -35,16 +35,26 @@ export default class reviews extends Model {
     sequelize,
     tableName: 'reviews',
     schema: 'public',
-    timestamps: true,
+     timestamps: true,
+  updatedAt: false, 
+  underscored: true,
     indexes: [
-      {
-        name: "reviews_pkey",
-        unique: true,
-        fields: [
-          { name: "review_id" },
-        ]
-      },
+  {
+    name: "reviews_pkey",
+    unique: true,
+    fields: [
+      { name: "review_id" },
     ]
+  },
+  {
+    name: "reviews_order_detail_id_unique",
+    unique: true,
+    fields: [
+      { name: "order_detail_id" },
+    ]
+  },
+]
+
   });
   }
 }

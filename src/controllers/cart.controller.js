@@ -2,9 +2,7 @@ import dotenv from "dotenv";
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 
-import {
-  formatVNDate,
-} from "../utils/dateFormat.js";
+import { formatVNDate } from "../utils/dateFormat.js";
 
 dotenv.config();
 const model = initModels(sequelize);
@@ -14,17 +12,26 @@ const addToCart = async (req, res) => {
     const user_id = req.user?.user_id;
     const { product_variant_id, quantity } = req.body;
 
-   
-    const qty = Number(quantity) > 0 ? Number(quantity) : 1;
-
     if (!user_id)
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
 
     if (!product_variant_id)
       return res.status(400).json({ message: "Thiếu product_variant_id" });
 
-    if (qty > 10)
+    const qty = parseInt(quantity);
+
+   
+    if (isNaN(qty)) {
+      return res.status(400).json({ message: "Số lượng không hợp lệ" });
+    }
+
+    if (qty < 1) {
+      return res.status(400).json({ message: "Số lượng tối thiểu là 1" });
+    }
+
+    if (qty > 10) {
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
+    }
 
     const user = await model.users.findByPk(user_id);
     if (!user)
@@ -41,25 +48,24 @@ const addToCart = async (req, res) => {
     });
 
     if (!variant)
-      return res.status(404).json({ message: "Biến thể sản phẩm không tồn tại" });
+      return res
+        .status(404)
+        .json({ message: "Biến thể sản phẩm không tồn tại" });
 
     if (variant.stock <= 0)
       return res.status(400).json({ message: "Sản phẩm đã hết hàng" });
 
-   
     let cart = await model.carts.findOne({ where: { user_id } });
 
     if (!cart) {
       cart = await model.carts.create({ user_id });
     }
 
- 
     let cartDetail = await model.cart_details.findOne({
       where: { cart_id: cart.cart_id, product_variant_id },
     });
 
     if (cartDetail) {
-  
       const newQuantity = cartDetail.quantity + qty;
 
       if (newQuantity > 10)
@@ -77,7 +83,6 @@ const addToCart = async (req, res) => {
       });
     }
 
-  
     if (qty > variant.stock)
       return res.status(400).json({ message: "Không đủ hàng trong kho" });
 
@@ -91,15 +96,11 @@ const addToCart = async (req, res) => {
       message: "Thêm vào giỏ hàng thành công",
       data: newCartDetail,
     });
-
   } catch (error) {
     console.error("Lỗi thêm giỏ hàng:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
-
 
 const getCart = async (req, res) => {
   try {
@@ -146,7 +147,13 @@ const getCart = async (req, res) => {
                 {
                   model: model.products,
                   as: "product",
-                  attributes: ["product_id", "name", "price", "discount", "thumbnail"],
+                  attributes: [
+                    "product_id",
+                    "name",
+                    "price",
+                    "discount",
+                    "thumbnail",
+                  ],
                 },
               ],
             },
@@ -214,8 +221,6 @@ const getCart = async (req, res) => {
   }
 };
 
-
-
 const setCartQuantity = async (req, res) => {
   try {
     const user_id = req.user?.user_id;
@@ -236,12 +241,10 @@ const setCartQuantity = async (req, res) => {
         .status(400)
         .json({ message: "Số lượng phải là số nguyên >= 1" });
 
- 
     const cart = await model.carts.findOne({ where: { user_id } });
     if (!cart)
       return res.status(404).json({ message: "Giỏ hàng không tồn tại" });
 
-  
     let cartDetail = await model.cart_details.findOne({
       where: { cart_id: cart.cart_id, product_variant_id },
       include: [
@@ -272,16 +275,18 @@ const setCartQuantity = async (req, res) => {
     cartDetail.quantity = finalQuantity;
     await cartDetail.save();
 
-
-    const fullCartDetail = await model.cart_details.findByPk(cartDetail.cart_detail_id, {
-      include: [
-        {
-          model: model.product_variants,
-          as: "product_variant",
-          include: [{ model: model.products, as: "product" }],
-        },
-      ],
-    });
+    const fullCartDetail = await model.cart_details.findByPk(
+      cartDetail.cart_detail_id,
+      {
+        include: [
+          {
+            model: model.product_variants,
+            as: "product_variant",
+            include: [{ model: model.products, as: "product" }],
+          },
+        ],
+      }
+    );
 
     return res.status(200).json({
       message: "Cập nhật số lượng thành công",
@@ -292,8 +297,6 @@ const setCartQuantity = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
 
 const deleteCartItem = async (req, res) => {
   try {
@@ -332,9 +335,6 @@ const deleteCartItem = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
-
 
 const deleteMultipleCartItems = async (req, res) => {
   try {

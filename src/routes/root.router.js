@@ -9,6 +9,7 @@ import OrderRouter from "./order.router.js";
 import PaymentRouter from "./payment.router.js";
 import MoMoRouter from "./momo.router.js";
 import FeedbackRouter from "./feedback.router.js";
+import ReviewRouter from "./review.outer.js";
 
 const rootRoutes = express.Router();
 
@@ -22,7 +23,8 @@ rootRoutes.use("/QuanLyDonHang", OrderRouter);
 rootRoutes.use("/QuanLyThanhToan", PaymentRouter);
 rootRoutes.use("/QuanLyGopY", FeedbackRouter);
 rootRoutes.use("/MoMo", MoMoRouter);
+rootRoutes.use("/QuanLyDanhGia", ReviewRouter);
 
 
-// // export rootRoutes cho index.js dùng
+
 export default rootRoutes;

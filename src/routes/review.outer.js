@@ -1,0 +1,43 @@
+import express from "express";
+import verifyToken from "../middleware/auth.middleware.js";
+import {requireRole} from "../middleware/role.middleware.js";
+import upload from "../utils/multer.js";
+import { createReview, 
+  replyReview, 
+  getReviewsByVariant,
+  getReviewsByVariantByRating,
+  toggleReviewVisibility,
+  getAllReviews,
+getReviewDetailByOrder,
+ } from "../controllers/review.controller.js";
+
+const ReviewRouter = express.Router();
+const handleUpload = (req, res, action) => {
+  upload(req, res, (err) => {
+    if (err) {
+      if (err.code === "LIMIT_FILE_SIZE") {
+        return res.status(400).json({ message: "File vượt quá 5MB" });
+      }
+      return res.status(400).json({ message: err.message });
+    }
+    action(req, res);
+  });
+};
+
+ReviewRouter.post(
+  "/VietDanhGia",
+  verifyToken,
+  (req, res) => handleUpload(req, res, createReview)
+);
+
+
+ReviewRouter.post("/TraLoiDanhGia", verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"), replyReview);
+ReviewRouter.put("/CapNhatTrangThaiDanhGia/:review_id", verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"), toggleReviewVisibility);
+ReviewRouter.get("/LayDanhSachDanhGiaCua1BienTheTheoRating/:product_variant_id",  getReviewsByVariantByRating);
+ReviewRouter.get("/LayDanhSachDanhGiaCua1BienThe/:product_variant_id",  getReviewsByVariant);
+ReviewRouter.get("/LayDanhSachTatCaDanhGia",verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"),  getAllReviews);
+ReviewRouter.get("/LayDanhGiaCuaChiTietDonHang/:order_detail_id",verifyToken,  getReviewDetailByOrder);
+
+
+
+export default ReviewRouter;
