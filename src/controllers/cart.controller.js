@@ -20,7 +20,6 @@ const addToCart = async (req, res) => {
 
     const qty = parseInt(quantity);
 
-   
     if (isNaN(qty)) {
       return res.status(400).json({ message: "Số lượng không hợp lệ" });
     }
@@ -378,6 +377,9 @@ const deleteMultipleCartItems = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
+
 
 export {
   addToCart,

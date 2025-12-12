@@ -17,7 +17,6 @@ rootRoutes.use("/QuanLyNguoiDung", userRouter);
 rootRoutes.use("/QuanLyDanhMuc", CategoryRouter);
 rootRoutes.use("/QuanLySanPham", ProductRouter);
 rootRoutes.use("/QuanLyGioHang", CartRouter);
-rootRoutes.use("/QuanLyGioHang", CartRouter);
 rootRoutes.use("/QuanLyDiaChiGiaoHang", UserAddressRouter);
 rootRoutes.use("/QuanLyDonHang", OrderRouter);
 rootRoutes.use("/QuanLyThanhToan", PaymentRouter);

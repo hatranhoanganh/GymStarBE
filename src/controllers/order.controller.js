@@ -61,9 +61,19 @@ const placeDirectOrder = async (req, res) => {
         .status(400)
         .json({ message: "Hết hàng hoặc không đủ số lượng" });
 
-    const price = Number(variant.product.price);
-    const discount = Number(variant.product.discount || 0);
-    const finalPrice = Math.round(price * (1 - discount / 100));
+    const originalPrice = Number(variant.product.price);
+    const discountPercent = variant.product.discount
+      ? parseFloat(variant.product.discount)
+      : 0;
+    let finalPrice;
+
+    if (discountPercent > 0) {
+      const discounted = originalPrice * (1 - discountPercent / 100);
+      finalPrice = Math.round(discounted / 1000) * 1000;
+    } else {
+      finalPrice = originalPrice;
+    }
+
     const totalAmount = finalPrice * finalQuantity;
 
     const newOrder = await model.orders.create(
@@ -86,7 +96,8 @@ const placeDirectOrder = async (req, res) => {
         product_variant_id,
         quantity: finalQuantity,
         price: finalPrice,
-        original_price: price,
+        original_price: originalPrice,
+        discount: discountPercent > 0 ? discountPercent : null,
       },
       { transaction: t }
     );
@@ -258,17 +269,27 @@ const placeCartOrder = async (req, res) => {
           }) không đủ hàng`,
         });
       }
+      const originalPrice = Number(product.price);
+      const discountPercent = product.discount
+        ? parseFloat(product.discount)
+        : 0;
 
-      const price = Number(product.price);
-      const discount = Number(product.discount || 0);
-      const finalPrice = Math.round(price * (1 - discount / 100));
+      let finalPrice;
+      if (discountPercent > 0) {
+        const discounted = originalPrice * (1 - discountPercent / 100);
+        finalPrice = Math.round(discounted / 1000) * 1000;
+      } else {
+        finalPrice = originalPrice;
+      }
+
       total += finalPrice * item.quantity;
 
       orderDetailsInput.push({
         product_variant_id: variant.product_variant_id,
         quantity: item.quantity,
-        original_price: price,
+        original_price: originalPrice,
         price: finalPrice,
+        discount_percent: discountPercent > 0 ? discountPercent : null,
       });
     }
 
@@ -669,11 +690,9 @@ const cancelOrder = async (req, res) => {
     });
 
     if (!order) {
-      return res
-        .status(404)
-        .json({
-          message: "Đơn hàng không tồn tại hoặc không thuộc quyền của bạn",
-        });
+      return res.status(404).json({
+        message: "Đơn hàng không tồn tại hoặc không thuộc quyền của bạn",
+      });
     }
 
     if (order.payment && order.payment.method === "MOMO") {
@@ -1096,6 +1115,154 @@ const updateOrderStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+const reorderCart = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+    const { order_id } = req.params;
+
+    if (!user_id) {
+      return res.status(401).json({ message: "Không tìm thấy người dùng" });
+    }
+
+    const order = await model.orders.findOne({
+      where: { order_id, user_id },
+      include: [
+        {
+          model: model.order_details,
+          as: "order_details",
+          include: [
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              include: [
+                {
+                  model: model.products,
+                  as: "product",
+                  attributes: ["name", "thumbnail"],
+                },
+              ],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (!order) {
+      return res.status(404).json({ message: "Đơn hàng không tồn tại hoặc không thuộc về bạn" });
+    }
+
+    const allowedStatuses = ["đã giao", "giao thất bại", "đã hủy", "đổi hàng"];
+    if (!allowedStatuses.includes(order.status)) {
+      return res.status(400).json({
+        message: "Chỉ được mua lại đơn hàng đã giao, giao thất bại, đã hủy hoặc đổi hàng",
+      });
+    }
+
+  
+    let cart = await model.carts.findOne({ where: { user_id } });
+    if (!cart) {
+      cart = await model.carts.create({ user_id });
+    }
+
+    const results = [];  
+    const failed = [];  
+
+   
+    for (const detail of order.order_details) {
+      const variant = detail.product_variant;
+
+      if (!variant || !variant.product) {
+        failed.push("Sản phẩm không hợp lệ hoặc đã bị xóa");
+        continue;
+      }
+
+      if (variant.stock <= 0) {
+        failed.push(`"${variant.product.name}" (${variant.variant_value || "biến thể"}) đã hết hàng`);
+        continue;
+      }
+
+      const variantId = variant.product_variant_id;
+
+
+      let cartDetail = await model.cart_details.findOne({
+        where: {
+          cart_id: cart.cart_id,
+          product_variant_id: variantId,
+        },
+      });
+
+      let newQuantity;
+
+      if (cartDetail) {
+      
+        newQuantity = cartDetail.quantity + 1;
+
+        if (newQuantity > 10) {
+          failed.push(`"${variant.product.name}" đã đạt tối đa 10 sản phẩm trong giỏ`);
+          continue;
+        }
+
+        if (newQuantity > variant.stock) {
+          failed.push(`"${variant.product.name}" không đủ hàng (chỉ còn ${variant.stock} sản phẩm)`);
+          continue;
+        }
+
+        cartDetail.quantity = newQuantity;
+        await cartDetail.save();
+
+        results.push({
+          product_variant_id: variantId,
+          name: variant.product.name,
+          variant_value: variant.variant_value,
+          quantity: newQuantity,
+          action: "updated (+1)",
+        });
+      } else {
+       
+        if (1 > variant.stock) {
+          failed.push(`"${variant.product.name}" không đủ hàng để thêm`);
+          continue;
+        }
+
+        await model.cart_details.create({
+          cart_id: cart.cart_id,
+          product_variant_id: variantId,
+          quantity: 1,
+        });
+
+        results.push({
+          product_variant_id: variantId,
+          name: variant.product.name,
+          variant_value: variant.variant_value,
+          quantity: 1,
+          action: "added (1)",
+        });
+      }
+    }
+
+   
+    const hasSuccess = results.length > 0;
+    const message = hasSuccess
+      ? failed.length > 0
+        ? "Đã thêm một số sản phẩm vào giỏ hàng"
+        : "Mua lại thành công! Tất cả sản phẩm đã được thêm vào giỏ"
+      : "Không thể thêm sản phẩm nào vào giỏ hàng";
+
+    return res.status(hasSuccess ? 200 : 400).json({
+      message,
+      data: {
+        cart_id: cart.cart_id,
+        success: results,
+        failed: failed,
+      },
+      
+    });
+
+  } catch (error) {
+    console.error("Lỗi mua lại đơn hàng:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 
 export {
   placeDirectOrder,
@@ -1106,4 +1273,5 @@ export {
   getOrdersByKeyWord,
   getAllOrders,
   updateOrderStatus,
+  reorderCart,
 };
