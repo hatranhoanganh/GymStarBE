@@ -22,12 +22,12 @@ const addAddress = async (req, res) => {
     const trimmedPhone = phone?.trim();
     const trimmedAddress = address_detail?.trim();
 
-    // Validation các trường bắt buộc
+   
     if (!trimmedReceiver || !trimmedPhone || !trimmedAddress) {
       return res.status(400).json({ message: "Các trường không được để trống" });
     }
 
-    // Validation tên người nhận
+
     const nameRegex = /^[A-Za-zÀ-ỹ\s]+$/;
     if (!nameRegex.test(trimmedReceiver)) {
       return res.status(400).json({
@@ -40,7 +40,7 @@ const addAddress = async (req, res) => {
       });
     }
 
-    // Validation số điện thoại
+
     const phoneRegex = /^0\d{9}$/;
     if (!phoneRegex.test(trimmedPhone)) {
       return res.status(400).json({
@@ -48,7 +48,7 @@ const addAddress = async (req, res) => {
       });
     }
 
-    // Validation địa chỉ
+
     const addressRegex = /^[A-Za-zÀ-ỹ0-9\s\/,]+$/;
     if (!addressRegex.test(trimmedAddress)) {
       return res.status(400).json({
@@ -68,23 +68,23 @@ const addAddress = async (req, res) => {
       });
     }
 
-    // 2. Kiểm tra số lượng địa chỉ tối đa
+   
     const addressCount = await model.user_addresses.count({
       where: { user_id },
     });
-    if (addressCount >= 10) {
+    if (addressCount >= 3) {
       return res.status(400).json({
-        message: "Bạn đã có 10 địa chỉ, không thể thêm nữa",
+        message: "Bạn đã có 3 địa chỉ, không thể thêm nữa",
       });
     }
 
-    // 3. Đặt tất cả địa chỉ cũ thành không mặc định
+   
     await model.user_addresses.update(
       { is_default: false },
       { where: { user_id } }
     );
 
-    // 4. Tạo địa chỉ mới (mặc định)
+   
     const newAddress = await model.user_addresses.create({
       user_id,
       receiver_name: trimmedReceiver,
@@ -93,7 +93,7 @@ const addAddress = async (req, res) => {
       is_default: true,
     });
 
-    // 5. Format dữ liệu trả về
+
     const formattedAddress = {
       address_id: newAddress.address_id,
       receiver_name: newAddress.receiver_name,
@@ -131,7 +131,7 @@ const updateAddress = async (req, res) => {
       return res.status(400).json({ message: "Thiếu address_id hoặc người dùng không xác định" });
     }
 
-    // Kiểm tra user tồn tại
+  
     const user = await model.users.findByPk(user_id, {
       include: [
         {
@@ -144,14 +144,14 @@ const updateAddress = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "Người dùng không tồn tại" });
 
-    // Kiểm tra địa chỉ tồn tại
+  
     const address = await model.user_addresses.findOne({
       where: { user_id, address_id },
     });
     if (!address)
       return res.status(404).json({ message: "Địa chỉ không tồn tại" });
 
-    // Trim và validate
+   
     const trimmedReceiver = receiver_name?.trim();
     const trimmedPhone = phone?.trim();
     const trimmedAddress = address_detail?.trim();
@@ -457,7 +457,7 @@ const getAllUserAddresses = async (req, res) => {
 };
 const getUserAddressesById = async (req, res) => {
  try {
-    // Lấy user_id từ token (middleware auth gắn req.user)
+ 
     const user_id = req.user?.user_id;
 
     if (!user_id) {
@@ -532,7 +532,7 @@ const getUserAddressesByKeyWord = async (req, res) => {
     const pageSize = parseInt(limit, 10) || 10;
     const searchTerm = `%${keyword.trim()}%`;
 
-    // Điều kiện tìm kiếm với unaccent + ILIKE
+   
     const receiverCondition = Sequelize.where(
       Sequelize.fn("unaccent", Sequelize.col("user_addresses.receiver_name")),
       "ILIKE",
@@ -547,7 +547,7 @@ const getUserAddressesByKeyWord = async (req, res) => {
 
     const phoneCondition = { phone: { [Op.like]: `%${keyword.trim()}%` } };
 
-    // Tổng số kết quả
+    
     const total = await model.user_addresses.count({
       where: { [Op.or]: [receiverCondition, addressDetailCondition, phoneCondition] },
       distinct: true,
@@ -566,7 +566,7 @@ const getUserAddressesByKeyWord = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
-    // Lấy dữ liệu
+  
     const addresses = await model.user_addresses.findAll({
       where: { [Op.or]: [receiverCondition, addressDetailCondition, phoneCondition] },
       include: [
@@ -595,7 +595,6 @@ const getUserAddressesByKeyWord = async (req, res) => {
       distinct: true,
     });
 
-    // Format dữ liệu trả về
     const formattedData = addresses.map((addr) => ({
       address_id: addr.address_id,
       receiver_name: addr.receiver_name,
