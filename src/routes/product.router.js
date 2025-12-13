@@ -55,11 +55,7 @@ ProductRouter.put(
 );
 ProductRouter.post("/ThemSize/:product_id/:color",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),addSizeToVariant);
-ProductRouter.get(
-  "/LaySanPhamTheoDanhMucCap1/:root_id", verifyToken,
-  requireRole("Quản trị viên", "Quản lý sản phẩm"),
-  getProductByDanhMucCap1
-);
+
 ProductRouter.get("/LayTatCaSanPhamAdmin",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),getAllProducts);
 ProductRouter.get(
@@ -79,6 +75,7 @@ ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
 ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
+ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
 
 
 export default ProductRouter;
