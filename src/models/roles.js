@@ -1,4 +1,4 @@
-// src/models/roles.js
+
 import _sequelize from 'sequelize';
 const { Model, Sequelize } = _sequelize;
 
@@ -13,7 +13,7 @@ export default class roles extends Model {
         field: 'role_id',
       },
       role_name: {
-        type: DataTypes.STRING(20),
+        type: DataTypes.STRING(50),
         allowNull: false,
         unique: true,
         field: 'role_name',

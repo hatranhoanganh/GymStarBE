@@ -6,13 +6,13 @@ export default class users extends Model {
   static init(sequelize) {
     return super.init(
       {
-        // 1. user_id → dùng field để map
+       
         user_id: {
           autoIncrement: true,
           type: DataTypes.INTEGER,
           allowNull: false,
           primaryKey: true,
-          field: "user_id", // DB: user_id → code: userId (tùy chọn)
+          field: "user_id", 
         },
         full_name: {
           type: DataTypes.STRING(100),

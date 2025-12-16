@@ -37,7 +37,7 @@ export default class product_variants extends Model {
         sku: {
           type: DataTypes.STRING(50),
           allowNull: true,
-          unique: true, // ĐÃ SỬA: Đảm bảo không trùng SKU
+          unique: true, 
         },
       },
       {
@@ -51,7 +51,7 @@ export default class product_variants extends Model {
             unique: true,
             fields: [{ name: "product_variant_id" }],
           },
-          // XÓA index sku vì unique: true đã tự tạo
+    
         ],
       }
     );

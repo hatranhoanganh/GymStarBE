@@ -413,6 +413,107 @@ const replyFeedback = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+const getFeedbackUser = async (req, res) => {
+  try {
+    const user_id = req.user?.user_id;
+
+    if (!user_id) {
+      return res.status(401).json({
+        message: "Không tìm thấy thông tin người dùng",
+      });
+    }
+
+    const { page = 1, limit = 10 } = req.query;
+    const pageNum = parseInt(page) || 1;
+    const pageSize = parseInt(limit) || 10;
+
+ 
+    const whereCondition = { user_id };
+
+    const count = await model.feedbacks.count({ where: whereCondition });
+    const totalPages = Math.ceil(count / pageSize);
+
+    if (count === 0) {
+      return res.status(200).json({
+        message: "Bạn chưa có góp ý nào.",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const validPage = Math.min(pageNum, totalPages);
+    const offset = (validPage - 1) * pageSize;
+
+    const feedbacks = await model.feedbacks.findAll({
+      where: whereCondition,
+      attributes: ["feedback_id", "type", "message", "created_at"],
+      include: [
+        {
+          model: model.users,
+          as: "user",
+          attributes: ["user_id", "full_name", "email"],
+        },
+        {
+          model: model.feedback_reply,
+          as: "feedback_reply",
+          include: [
+            {
+              model: model.users,
+              as: "user",
+              attributes: ["user_id", "full_name", "email"],
+            },
+          ],
+        },
+      ],
+      limit: pageSize,
+      offset,
+      order: [["feedback_id", "DESC"]],
+    });
+
+    const formattedData = feedbacks.map((fb) => ({
+      feedback: {
+        feedback_id: fb.feedback_id,
+        type: fb.type,
+        message: fb.message,
+        created_at: formatVNDateTime(fb.created_at),
+        user: fb.user
+          ? {
+              user_id: fb.user.user_id,
+              full_name: fb.user.full_name,
+              email: fb.user.email,
+            }
+          : null,
+      },
+      reply: fb.feedback_reply
+        ? {
+            feedback_reply_id: fb.feedback_reply.feedback_reply_id,
+            message: fb.feedback_reply.message,
+            replied_at: formatVNDateTime(fb.feedback_reply.replied_at),
+            admin: fb.feedback_reply.user
+              ? {
+                  user_id: fb.feedback_reply.user.user_id,
+                  full_name: fb.feedback_reply.user.full_name,
+                  email: fb.feedback_reply.user.email,
+                }
+              : null,
+          }
+        : null,
+    }));
+
+    return res.status(200).json({
+      message: "Lấy danh sách góp ý của bạn thành công",
+      total: count,
+      page: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (error) {
+    console.error("Lỗi getMyFeedbacks:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 
 export {
   addFeedback,
@@ -420,4 +521,5 @@ export {
   deleteFeedback,
   getFeedbackByKeyWord,
   replyFeedback,
+  getFeedbackUser,
 };

@@ -33,7 +33,7 @@ export default class feedbacks extends Model {
         tableName: "feedbacks",
         schema: "public",
         timestamps: true,
-        createdAt: "created_at",
+         underscored: true,
         updatedAt: false,
         indexes: [
           {

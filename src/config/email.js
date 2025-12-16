@@ -87,7 +87,7 @@ export const sendVerificationEmail = async (email, token) => {
   console.log("Email xác nhận đã gửi:", email);
 };
 
-// ĐÚNG: export tên hàm
+
 export const sendConfirmationEmail = async (email, full_name) => {
   await sgMail.send({
     to: email,
@@ -99,7 +99,7 @@ export const sendConfirmationEmail = async (email, full_name) => {
         <p>Tài khoản đã được kích hoạt.</p>
         <a href="${
           process.env.CLIENT_URL || "http://localhost:5173"
-        }/login" style="background:#48bb78; color:white; padding:12px 24px; text-decoration:none; border-radius:8px;">
+        }/dang-nhap" style="background:#48bb78; color:white; padding:12px 24px; text-decoration:none; border-radius:8px;">
           Đăng nhập ngay
         </a>
       </div>
@@ -107,7 +107,7 @@ export const sendConfirmationEmail = async (email, full_name) => {
   });
   console.log("Email chào mừng đã gửi:", email);
 };
-// === 3. GỬI MÃ OTP QUÊN MẬT KHẨU ===
+
 export const sendOTPEmail = async (email, otp) => {
   await sgMail.send({
     to: email,

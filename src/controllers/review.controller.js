@@ -311,9 +311,6 @@ const getReviewsByVariant = async (req, res) => {
   }
 };
 
-
-
-
 const getReviewsByVariantByRating = async (req, res) => {
   try {
     const { product_variant_id } = req.params;

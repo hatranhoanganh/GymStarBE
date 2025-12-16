@@ -108,7 +108,7 @@ const getCart = async (req, res) => {
     if (!user_id)
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
 
-    // 1. Lấy thông tin user
+  
     const user = await model.users.findByPk(user_id, {
       attributes: ["user_id", "full_name", "email", "gender", "birth_date"],
       include: [
@@ -123,7 +123,7 @@ const getCart = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "Người dùng không tồn tại" });
 
-    // 2. Lấy giỏ hàng của user, kèm chi tiết sản phẩm
+    
     const cart = await model.carts.findOne({
       where: { user_id },
       include: [
@@ -172,7 +172,7 @@ const getCart = async (req, res) => {
       });
     }
 
-    // 3. Format dữ liệu trả về
+  
     const formattedCart = cart.cart_details.map((item) => {
       const variant = item.product_variant;
       const product = variant.product;

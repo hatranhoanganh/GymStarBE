@@ -28,7 +28,7 @@
             allowNull: true,
           },
           discount: {
-            type: DataTypes.DECIMAL(5, 2),
+             type: DataTypes.INTEGER,
             allowNull: true,
             defaultValue: 0,
             validate: {

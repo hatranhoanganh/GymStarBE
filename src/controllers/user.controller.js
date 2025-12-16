@@ -226,7 +226,7 @@ const verifyEmail = async (req, res) => {
           <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#f0fff4;">
             <h3 style="color:#48bb78;">Tài khoản đã được xác nhận</h3>
             <p>Bạn có thể đăng nhập ngay bây giờ.</p>
-            <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/login"
+            <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/dang-nhap"
               style="background:#48bb78; color:white; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:bold; margin-top:20px; display:inline-block;">
               Đăng nhập ngay
             </a>
@@ -261,7 +261,7 @@ const verifyEmail = async (req, res) => {
               <p style="color:#718096; margin:20px 0;">Tài khoản đã được kích hoạt.</p>
               <a href="${
                 process.env.CLIENT_URL || "http://localhost:5173"
-              }/login"
+              }/dang-nhap"
                 style="display:inline-block; background:#48bb78; color:white; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:bold; margin-top:20px;">
                 Đăng nhập ngay
               </a>
@@ -324,7 +324,7 @@ const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-    // === 1. Validate input ===
+
     const trimmedEmail = email?.trim().toLowerCase();
     const trimmedPassword = password?.trim();
 
@@ -343,7 +343,7 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // === 2. Tìm user + role ===
+ 
     const user = await model.users.findOne({
       where: { email: trimmedEmail },
       include: [
@@ -362,9 +362,9 @@ const loginUser = async (req, res) => {
       });
     }
 
-    // === 3. Kiểm tra trạng thái tài khoản ===
+ 
     if (user.status === "chưa xác nhận") {
-      // Gửi lại email xác nhận nếu chưa xác nhận
+     
       const newToken = jwt.sign(
         { user_id: user.user_id, email: user.email, purpose: "email_verify" },
         process.env.JWT_SECRET,
