@@ -232,11 +232,9 @@ const deleteFeedback = async (req, res) => {
 const getFeedbackByKeyWord = async (req, res) => {
   try {
     let { keyword = "", page = 1, limit = 10 } = req.query;
-
     keyword = keyword.trim();
     const pageNum = parseInt(page, 10) || 1;
     const pageSize = parseInt(limit, 10) || 10;
-
     const searchTerm = `%${keyword}%`;
 
     const searchCondition = {
@@ -244,16 +242,13 @@ const getFeedbackByKeyWord = async (req, res) => {
         Sequelize.where(Sequelize.col("user.user_id"), {
           [Op.eq]: Number(keyword) || 0,
         }),
-
-        Sequelize.where(Sequelize.fn("unaccent", Sequelize.col("user.email")), {
-          [Op.iLike]: Sequelize.fn("unaccent", searchTerm),
-        }),
-
+        Sequelize.where(
+          Sequelize.fn("unaccent", Sequelize.col("user.email")),
+          { [Op.iLike]: Sequelize.fn("unaccent", searchTerm) }
+        ),
         Sequelize.where(
           Sequelize.fn("unaccent", Sequelize.col("user.full_name")),
-          {
-            [Op.iLike]: Sequelize.fn("unaccent", searchTerm),
-          }
+          { [Op.iLike]: Sequelize.fn("unaccent", searchTerm) }
         ),
       ],
     };
@@ -286,41 +281,73 @@ const getFeedbackByKeyWord = async (req, res) => {
         {
           model: model.users,
           as: "user",
-          attributes: ["user_id", "full_name", "email"],
+          attributes: ["user_id", "full_name", "email", "role_id"],
           where: searchCondition,
+          include: [
+            {
+              model: model.roles,
+              as: "role",
+              attributes: ["role_name"],
+            },
+          ],
+        },
+        {
+          model: model.feedback_reply,
+          as: "feedback_reply",
+          include: [
+            {
+              model: model.users,
+              as: "user",
+              attributes: ["user_id", "full_name", "email"],
+            },
+          ],
         },
       ],
       limit: pageSize,
       offset,
+      order: [["feedback_id", "DESC"]],
     });
 
-    const formatted = feedbacks.map((fb) => ({
-      feedback_id: fb.feedback_id,
-      message: fb.message,
-      created_at: formatVNDateTime(fb.created_at),
-      user: {
-        user_id: fb.user?.user_id || null,
-        full_name: fb.user?.full_name || null,
-        email: fb.user?.email || null,
+    const formattedData = feedbacks.map((fb) => ({
+      feedback: {
+        feedback_id: fb.feedback_id,
+        type: fb.type,
+        message: fb.message,
+        created_at: formatVNDateTime(fb.created_at),
+        user: fb.user
+          ? {
+              user_id: fb.user.user_id,
+              full_name: fb.user.full_name,
+              email: fb.user.email,
+            }
+          : null,
       },
+      reply: fb.feedback_reply
+        ? {
+            feedback_reply_id: fb.feedback_reply.feedback_reply_id,
+            message: fb.feedback_reply.message,
+            replied_at: formatVNDateTime(fb.feedback_reply.replied_at),
+            admin: fb.feedback_reply.user
+              ? {
+                  user_id: fb.feedback_reply.user.user_id,
+                  full_name: fb.feedback_reply.user.full_name,
+                  email: fb.feedback_reply.user.email,
+                }
+              : null,
+          }
+        : null,
     }));
 
     return res.status(200).json({
       message: "Tìm kiếm góp ý thành công",
-      data: formatted,
-      pagination: {
-        total,
-        page: validPage,
-        limit: pageSize,
-        totalPages,
-      },
+      total,
+      page: validPage,
+      totalPages,
+      data: formattedData,
     });
   } catch (error) {
     console.error("Lỗi searchFeedback:", error);
-    return res.status(500).json({
-      message: "Lỗi server",
-      error: error.message,
-    });
+    return res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
 

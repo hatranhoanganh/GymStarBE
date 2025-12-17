@@ -9,7 +9,7 @@ import fs from "fs/promises";
 dotenv.config();
 const model = initModels(sequelize);
 
-// Loại bỏ dấu tiếng Việt
+
 const removeVietnameseTones = (str = "") => {
   return str
     .normalize("NFD")
@@ -18,7 +18,7 @@ const removeVietnameseTones = (str = "") => {
     .replace(/Đ/g, "D");
 };
 
-// Tạo code category
+
 const buildCategoryCode = (name = "") => {
   return removeVietnameseTones(name)
     .trim()
@@ -28,7 +28,7 @@ const buildCategoryCode = (name = "") => {
     .toUpperCase();
 };
 
-// Tạo code color
+
 const getColorCode = (color = "") => {
   return removeVietnameseTones(color)
     .trim()
@@ -37,7 +37,6 @@ const getColorCode = (color = "") => {
     .join("");
 };
 
-// Tạo SKU
 const buildSKU = (categoryName, productId, color, size) => {
   const categoryCode = buildCategoryCode(categoryName);
   const colorCode = getColorCode(color);

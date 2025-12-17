@@ -34,6 +34,7 @@ export default class feedbacks extends Model {
         schema: "public",
         timestamps: true,
          underscored: true,
+         createdAt: "created_at",
         updatedAt: false,
         indexes: [
           {
