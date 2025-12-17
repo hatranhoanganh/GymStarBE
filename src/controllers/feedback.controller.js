@@ -45,7 +45,7 @@ const addFeedback = async (req, res) => {
 
     const lastFeedback = await model.feedbacks.findOne({
       where: { user_id },
-      order: [["createdAt", "DESC"]],
+      order: [["created_at", "DESC"]],
     });
 
     if (lastFeedback) {
@@ -62,6 +62,7 @@ const addFeedback = async (req, res) => {
       user_id,
       type,
       message: cleanMsg,
+      createdAt: new Date(),
     });
 
     const user = await model.users.findByPk(user_id, {
@@ -75,7 +76,7 @@ const addFeedback = async (req, res) => {
         feedback_id: fb.feedback_id,
         type: fb.type,
         message: fb.message,
-        createdAt: formatVNDateTime(fb.createdAt),
+        createdAt: formatVNDateTime(fb.created_at),
         user: {
           user_id: user.user_id,
           full_name: user.full_name,
