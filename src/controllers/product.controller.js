@@ -45,25 +45,7 @@ const buildSKU = (categoryName, productId, color, size) => {
   return sku;
 };
 
-// async function safeUnlink(filePath) {
-//   if (!filePath) return;
-//   try {
-//     await fs.unlink(filePath);
-//   } catch (err) {
-//     if (err.code !== "ENOENT") console.error("Xóa file tạm lỗi:", err.message);
-//   }
-// }
 
-// async function clearFiles(files) {
-//   if (!files) return;
-//   for (const f of files) {
-//     await safeUnlink(f.path);
-//   }
-// }
-
-// function sendError(res, files, msg) {
-//   return clearFiles(files).then(() => res.status(400).json({ message: msg }));
-// }
 
 const addFullProduct = async (req, res) => {
   const filesToDelete = new Set();
@@ -1111,7 +1093,9 @@ const getProductByDanhMucCap1 = async (req, res) => {
     childIds.push(root_id);
 
     const total = await model.products.count({
-      where: { category_id: { [Op.in]: childIds } },
+      where: { category_id: { [Op.in]: childIds },
+      status: "đang bán",
+     },
     });
     if (total === 0) {
       return res.status(200).json({
@@ -1127,7 +1111,9 @@ const getProductByDanhMucCap1 = async (req, res) => {
     const offset = (validPage - 1) * limit;
 
     const products = await model.products.findAll({
-      where: { category_id: { [Op.in]: childIds } },
+      where: { category_id: { [Op.in]: childIds },
+      status: "đang bán",
+    },
       limit,
       offset,
       order: [["name", "ASC"]],
@@ -1764,7 +1750,11 @@ const getProductDetail = async (req, res) => {
   try {
     const { product_id } = req.params;
 
-    const product = await model.products.findByPk(product_id, {
+    const product = await model.products.findOne({
+  where: {
+    product_id: product_id,
+    status: "đang bán",
+  },
       attributes: [
         "product_id",
         "name",

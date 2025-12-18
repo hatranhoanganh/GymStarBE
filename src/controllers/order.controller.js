@@ -702,7 +702,7 @@ const cancelOrder = async (req, res) => {
       });
     }
 
-    const allowed = ["chờ xác nhận", "đã xác nhận", "đang xử lý"];
+    const allowed = ["chờ xác nhận", "đã xác nhận", "đang xử lý", "đang giao"];
     if (!allowed.includes(order.status)) {
       return res.status(400).json({
         message: `Đơn hàng đang ở trạng thái "${order.status}", không thể hủy`,
@@ -1118,43 +1118,76 @@ const updateOrderStatus = async (req, res) => {
 const reorderCart = async (req, res) => {
   try {
     const user_id = req.user?.user_id;
-    const { order_id } = req.params;
+    const { order_detail_id } = req.params;
 
     if (!user_id) {
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
     }
 
-    const order = await model.orders.findOne({
-      where: { order_id, user_id },
+    const orderDetail = await model.order_details.findOne({
+      where: { order_detail_id },
       include: [
         {
-          model: model.order_details,
-          as: "order_details",
+          model: model.orders,
+          as: "order",
+          where: { user_id },
+          attributes: ["order_id", "status"],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variant",
+          attributes: [
+            "product_variant_id",
+            "stock",
+            "color",
+            "size",
+            "sku",
+          ],
           include: [
             {
-              model: model.product_variants,
-              as: "product_variant",
-              include: [
-                {
-                  model: model.products,
-                  as: "product",
-                  attributes: ["name", "thumbnail"],
-                },
-              ],
+              model: model.products,
+              as: "product",
+              where: { status: "đang bán" },
+              attributes: ["product_id", "name", "thumbnail"],
+              required: true,
             },
           ],
         },
       ],
     });
 
-    if (!order) {
-      return res.status(404).json({ message: "Đơn hàng không tồn tại hoặc không thuộc về bạn" });
+    if (!orderDetail) {
+      return res.status(404).json({
+        message:
+          "Không thể mua lại sản phẩm (đơn không tồn tại hoặc không thuộc người dùng)",
+      });
     }
 
-    const allowedStatuses = ["đã giao", "giao thất bại", "đã hủy", "đổi hàng"];
-    if (!allowedStatuses.includes(order.status)) {
+    const allowedStatuses = [
+      "đã giao",
+      "giao thất bại",
+      "đã hủy",
+      "đổi hàng",
+    ];
+
+    if (!allowedStatuses.includes(orderDetail.order.status)) {
       return res.status(400).json({
-        message: "Chỉ được mua lại đơn hàng đã giao, giao thất bại, đã hủy hoặc đổi hàng",
+        message: "Chỉ được mua lại sản phẩm từ đơn đã hoàn tất hoặc bị hủy",
+      });
+    }
+
+    if (!orderDetail.product_variant) {
+      return res.status(400).json({
+        message: "Sản phẩm không còn tồn tại hoặc đã ngừng bán",
+      });
+    }
+
+    const variant = orderDetail.product_variant;
+    const stock = Number(variant.stock ?? 0);
+
+    if (stock <= 0) {
+      return res.status(400).json({
+        message: "Sản phẩm đã hết hàng",
       });
     }
 
@@ -1164,105 +1197,60 @@ const reorderCart = async (req, res) => {
       cart = await model.carts.create({ user_id });
     }
 
-    const results = [];  
-    const failed = [];  
-
    
-    for (const detail of order.order_details) {
-      const variant = detail.product_variant;
+    const variantId = variant.product_variant_id;
 
-      if (!variant || !variant.product) {
-        failed.push("Sản phẩm không hợp lệ hoặc đã bị xóa");
-        continue;
+    let cartDetail = await model.cart_details.findOne({
+      where: {
+        cart_id: cart.cart_id,
+        product_variant_id: variantId,
+      },
+    });
+
+    if (cartDetail) {
+      const newQuantity = cartDetail.quantity + 1;
+
+      if (newQuantity > 10) {
+        return res.status(400).json({
+          message: "Mỗi sản phẩm chỉ được tối đa 10 trong giỏ hàng",
+        });
       }
 
-      if (variant.stock <= 0) {
-        failed.push(`"${variant.product.name}" (${variant.variant_value || "biến thể"}) đã hết hàng`);
-        continue;
+      if (newQuantity > stock) {
+        return res.status(400).json({
+          message: `Không đủ hàng (chỉ còn ${stock} sản phẩm)`,
+        });
       }
 
-      const variantId = variant.product_variant_id;
-
-
-      let cartDetail = await model.cart_details.findOne({
-        where: {
-          cart_id: cart.cart_id,
-          product_variant_id: variantId,
-        },
+      cartDetail.quantity = newQuantity;
+      await cartDetail.save();
+    } else {
+      await model.cart_details.create({
+        cart_id: cart.cart_id,
+        product_variant_id: variantId,
+        quantity: 1,
       });
-
-      let newQuantity;
-
-      if (cartDetail) {
-      
-        newQuantity = cartDetail.quantity + 1;
-
-        if (newQuantity > 10) {
-          failed.push(`"${variant.product.name}" đã đạt tối đa 10 sản phẩm trong giỏ`);
-          continue;
-        }
-
-        if (newQuantity > variant.stock) {
-          failed.push(`"${variant.product.name}" không đủ hàng (chỉ còn ${variant.stock} sản phẩm)`);
-          continue;
-        }
-
-        cartDetail.quantity = newQuantity;
-        await cartDetail.save();
-
-        results.push({
-          product_variant_id: variantId,
-          name: variant.product.name,
-          variant_value: variant.variant_value,
-          quantity: newQuantity,
-          action: "updated (+1)",
-        });
-      } else {
-       
-        if (1 > variant.stock) {
-          failed.push(`"${variant.product.name}" không đủ hàng để thêm`);
-          continue;
-        }
-
-        await model.cart_details.create({
-          cart_id: cart.cart_id,
-          product_variant_id: variantId,
-          quantity: 1,
-        });
-
-        results.push({
-          product_variant_id: variantId,
-          name: variant.product.name,
-          variant_value: variant.variant_value,
-          quantity: 1,
-          action: "added (1)",
-        });
-      }
     }
 
    
-    const hasSuccess = results.length > 0;
-    const message = hasSuccess
-      ? failed.length > 0
-        ? "Đã thêm một số sản phẩm vào giỏ hàng"
-        : "Mua lại thành công! Tất cả sản phẩm đã được thêm vào giỏ"
-      : "Không thể thêm sản phẩm nào vào giỏ hàng";
-
-    return res.status(hasSuccess ? 200 : 400).json({
-      message,
+    return res.status(200).json({
+      message: "Mua lại sản phẩm thành công",
       data: {
         cart_id: cart.cart_id,
-        success: results,
-        failed: failed,
+        product_variant_id: variantId,
+        product_name: variant.product.name,
+        color: variant.color,
+        size: variant.size,
+        quantity: cartDetail ? cartDetail.quantity : 1,
       },
-      
     });
-
   } catch (error) {
-    console.error("Lỗi mua lại đơn hàng:", error);
+    console.error("Lỗi reorderCartByOrderDetail:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
 
 export {
   placeDirectOrder,

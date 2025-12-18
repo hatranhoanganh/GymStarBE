@@ -19,7 +19,7 @@ const OrderRouter = express.Router();
 OrderRouter.post("/DatHangNgay",verifyToken, placeDirectOrder);
 OrderRouter.post("/DatHangTuGioHang",verifyToken, placeCartOrder);
 OrderRouter.post("/HuyDonHang/:order_id",verifyToken, cancelOrder);
-OrderRouter.post("/MuaLai/:order_id",verifyToken, reorderCart);
+OrderRouter.post("/MuaLai/:order_detail_id",verifyToken, reorderCart);
 
 //quản trị viên, quản lý đơn hàng và chính mình
 OrderRouter.get("/LayDanhSachDonHangTheoTrangThai",verifyToken, getOrdersByStatus);

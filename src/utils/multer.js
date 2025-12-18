@@ -36,7 +36,7 @@ const fileFilter = (req, file, cb) => {
   }
 };
 
-// ✅ Thay upload.any() bằng upload.fields()
+
 const upload = multer({
   storage,
   fileFilter,
