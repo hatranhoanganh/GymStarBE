@@ -16,6 +16,8 @@ import {
   addFullProduct,
   getProductsByStatus,
   deleteProduct,
+  getProductByDanhMucCap2,
+  getProductByDanhMucCap3,
 } from "../controllers/product.controller.js";
 
 
@@ -76,6 +78,8 @@ ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
 ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
 ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
+ProductRouter.get("/LaySanPhamTheoDanhMucCap2/:category_id", getProductByDanhMucCap2);
+ProductRouter.get("/LaySanPhamTheoDanhMucCap3/:category_id", getProductByDanhMucCap3);
 
 
 export default ProductRouter;

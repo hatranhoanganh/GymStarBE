@@ -2026,6 +2026,296 @@ const deleteProduct = async (req, res) => {
     });
   }
 };
+const getProductByDanhMucCap2 = async (req, res) => {
+  try {
+    const category_id = parseInt(req.params.category_id);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+
+    if (!category_id) {
+      return res
+        .status(400)
+        .json({ message: "Danh mục cấp 2 không được để trống" });
+    }
+
+    const category = await model.categories.findByPk(category_id, {
+      include: [{ model: model.categories, as: "parent" }],
+    });
+
+    if (!category)
+      return res.status(404).json({ message: "Danh mục không tồn tại" });
+
+   
+    if (!category.parent || category.parent.parent_id !== null) {
+      return res
+        .status(400)
+        .json({ message: "category_id không phải danh mục cấp 2" });
+    }
+
+    const allCategories = await model.categories.findAll({
+      attributes: ["category_id", "parent_id"],
+      raw: true,
+    });
+
+    const childIds = getAllChildCategoryIds(allCategories, category_id);
+    childIds.push(category_id);
+
+    const total = await model.products.count({
+      where: {
+        category_id: { [Op.in]: childIds },
+        status: "đang bán",
+      },
+    });
+
+    if (total === 0) {
+      return res.status(200).json({
+        message: "Chưa có sản phẩm trong danh mục này.",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const totalPages = Math.ceil(total / limit);
+    const validPage = Math.min(page, totalPages || 1);
+    const offset = (validPage - 1) * limit;
+
+    const products = await model.products.findAll({
+      where: {
+        category_id: { [Op.in]: childIds },
+        status: "đang bán",
+      },
+      limit,
+      offset,
+      order: [["name", "ASC"]],
+      attributes: [
+        "product_id",
+        "name",
+        "description",
+        "discount",
+        "price",
+        "spec",
+        "thumbnail",
+        "status",
+        "category_id",
+        "createdAt",
+        "updatedAt",
+      ],
+      include: [
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["name", "parent_id"],
+          include: [
+            {
+              model: model.categories,
+              as: "parent",
+              attributes: ["name"],
+            },
+          ],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
+        },
+      ],
+      nest: true,
+    });
+
+    const formattedData = products.map((p) => {
+      const colors = {};
+      p.product_images.forEach((img) => {
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
+        colors[img.color].images.push(img.image);
+      });
+
+      const product_variants = p.product_variants.map((v) => ({
+        product_variant_id: v.product_variant_id,
+        color: v.color,
+        size: v.size,
+        stock: v.stock,
+        sku: v.sku,
+      }));
+
+      return {
+        product_id: p.product_id,
+        name: p.name,
+        description: p.description,
+        discount: p.discount,
+        price: p.price,
+        spec: p.spec || null,
+        thumbnail: p.thumbnail,
+        status: p.status,
+        category_id: p.category_id,
+        category_name: p.category?.name || null,
+        parent_category_name: p.category?.parent?.name || null,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
+        product_variants,
+        colors: Object.values(colors),
+      };
+    });
+
+    return res.status(200).json({
+      message: "Lấy sản phẩm theo danh mục cấp 2 thành công",
+      total,
+      page: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (err) {
+    console.error("Lỗi getProductByDanhMucCap2:", err);
+    return res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};
+const getProductByDanhMucCap3 = async (req, res) => {
+  try {
+    const category_id = parseInt(req.params.category_id);
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 20;
+
+    if (!category_id) {
+      return res
+        .status(400)
+        .json({ message: "Danh mục cấp 3 không được để trống" });
+    }
+
+    const category = await model.categories.findByPk(category_id, {
+      include: [{ model: model.categories, as: "parent" }],
+    });
+
+    
+    if (!category || !category.parent || category.parent.parent_id === null) {
+      return res
+        .status(400)
+        .json({ message: "category_id không phải danh mục cấp 3" });
+    }
+
+    const total = await model.products.count({
+      where: {
+        category_id,
+        status: "đang bán",
+      },
+    });
+
+    if (total === 0) {
+      return res.status(200).json({
+        message: "Chưa có sản phẩm trong danh mục này.",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const totalPages = Math.ceil(total / limit);
+    const validPage = Math.min(page, totalPages || 1);
+    const offset = (validPage - 1) * limit;
+
+    const products = await model.products.findAll({
+      where: {
+        category_id,
+        status: "đang bán",
+      },
+      limit,
+      offset,
+      order: [["name", "ASC"]],
+      attributes: [
+        "product_id",
+        "name",
+        "description",
+        "discount",
+        "price",
+        "spec",
+        "thumbnail",
+        "status",
+        "category_id",
+        "createdAt",
+        "updatedAt",
+      ],
+      include: [
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["name", "parent_id"],
+          include: [
+            {
+              model: model.categories,
+              as: "parent",
+              attributes: ["name"],
+            },
+          ],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
+        },
+      ],
+      nest: true,
+    });
+
+  
+    const formattedData = products.map((p) => {
+      const colors = {};
+      p.product_images.forEach((img) => {
+        if (!colors[img.color])
+          colors[img.color] = { color: img.color, images: [] };
+        colors[img.color].images.push(img.image);
+      });
+
+      const product_variants = p.product_variants.map((v) => ({
+        product_variant_id: v.product_variant_id,
+        color: v.color,
+        size: v.size,
+        stock: v.stock,
+        sku: v.sku,
+      }));
+
+      return {
+        product_id: p.product_id,
+        name: p.name,
+        description: p.description,
+        discount: p.discount,
+        price: p.price,
+        spec: p.spec || null,
+        thumbnail: p.thumbnail,
+        status: p.status,
+        category_id: p.category_id,
+        category_name: p.category?.name || null,
+        parent_category_name: p.category?.parent?.name || null,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
+        product_variants,
+        colors: Object.values(colors),
+      };
+    });
+
+    return res.status(200).json({
+      message: "Lấy sản phẩm theo danh mục cấp 3 thành công",
+      total,
+      page: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (err) {
+    console.error("Lỗi getProductByDanhMucCap3:", err);
+    return res.status(500).json({ message: "Lỗi server", error: err.message });
+  }
+};
 
 export {
   addFullProduct,
@@ -2041,4 +2331,6 @@ export {
   updateProductStatus,
   getProductsByStatus,
   deleteProduct,
+  getProductByDanhMucCap2,
+  getProductByDanhMucCap3,
 };

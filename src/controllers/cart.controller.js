@@ -22,20 +22,12 @@ const addToCart = async (req, res) => {
       return res.status(400).json({ message: "Thiếu product_variant_id" });
 
     const qty = parseInt(quantity);
-
     if (isNaN(qty) || qty < 1)
       return res.status(400).json({ message: "Số lượng không hợp lệ" });
 
     if (qty > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
 
-    const user = await model.users.findByPk(user_id, { transaction: t });
-    if (!user) {
-      await t.rollback();
-      return res.status(404).json({ message: "Người dùng không tồn tại" });
-    }
-
-    // Lock chỉ product_variant, không khoá join product
     const variant = await model.product_variants.findByPk(product_variant_id, {
       transaction: t,
       lock: { level: t.LOCK.UPDATE, of: model.product_variants },
@@ -50,9 +42,7 @@ const addToCart = async (req, res) => {
 
     if (!variant) {
       await t.rollback();
-      return res
-        .status(404)
-        .json({ message: "Biến thể sản phẩm không tồn tại" });
+      return res.status(404).json({ message: "Biến thể sản phẩm không tồn tại" });
     }
 
     if (variant.stock < 1) {
@@ -60,11 +50,13 @@ const addToCart = async (req, res) => {
       return res.status(400).json({ message: "Sản phẩm đã hết hàng" });
     }
 
+    // Lấy giỏ hàng của user, nếu chưa có thì tạo mới
     let cart = await model.carts.findOne({ where: { user_id }, transaction: t });
     if (!cart) {
-      cart = await model.carts.create({ user_id, product_variant_id }, { transaction: t });
+      cart = await model.carts.create({ user_id }, { transaction: t });
     }
 
+    // Kiểm tra xem sản phẩm đã có trong giỏ chưa
     let cartDetail = await model.cart_details.findOne({
       where: { cart_id: cart.cart_id, product_variant_id },
       transaction: t,
@@ -85,14 +77,15 @@ const addToCart = async (req, res) => {
 
       cartDetail.quantity = newQuantity;
       await cartDetail.save({ transaction: t });
-
       await t.commit();
+
       return res.status(200).json({
         message: "Đã cập nhật số lượng trong giỏ hàng",
         data: cartDetail,
       });
     }
 
+    // Tạo mới cart_detail
     if (qty > variant.stock) {
       await t.rollback();
       return res.status(400).json({ message: "Không đủ hàng trong kho" });
@@ -114,6 +107,8 @@ const addToCart = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
 
 
 const getCart = async (req, res) => {

@@ -351,27 +351,31 @@ const getCategoryCap3LocCap1 = async (req, res) => {
     const { root_id } = req.params;
 
     if (!root_id) {
-      return res.status(400).json({ message: "Nhập thêm root_id" });
+      return res.status(400).json({ message: "Thiếu root_id" });
     }
 
     const rootCategory = await model.categories.findByPk(root_id);
     if (!rootCategory) {
-      return res.status(404).json({ message: "Root_id không tồn tại" });
+      return res.status(404).json({ message: "Root category không tồn tại" });
     }
+
 
     const level2Categories = await model.categories.findAll({
       where: { parent_id: root_id },
-      attributes: ["category_id", "name"],
+      attributes: ["category_id", "name", "createdAt", "updatedAt"],
+      raw: true,
     });
 
+    
     if (level2Categories.length === 0) {
       return res.status(200).json({
-        message: "Không có danh mục cấp 3 dưới root này",
+        message: "Danh mục gốc chưa có danh mục con",
         data: [],
       });
     }
 
     const level2Ids = level2Categories.map((cat) => cat.category_id);
+
 
     const level3Categories = await model.categories.findAll({
       where: { parent_id: level2Ids },
@@ -386,10 +390,30 @@ const getCategoryCap3LocCap1 = async (req, res) => {
       raw: true,
     });
 
-    const formattedData = level3Categories.map((cat) => {
+   
+    if (level3Categories.length === 0) {
+      const formattedLevel2 = level2Categories.map((cat) => ({
+        category_id: cat.category_id,
+        name: cat.name,
+        parent_id: root_id,
+        parent_name: rootCategory.name,
+        root_name: rootCategory.name,
+        createdAt: formatVNDateTime(cat.createdAt),
+        updatedAt: formatVNDateTime(cat.updatedAt),
+      }));
+
+      return res.status(200).json({
+        message: "Danh mục chỉ có 2 cấp, trả về danh mục cấp 2",
+        data: formattedLevel2,
+      });
+    }
+
+  
+    const formattedLevel3 = level3Categories.map((cat) => {
       const parent = level2Categories.find(
         (p) => p.category_id === cat.parent_id
       );
+
       return {
         category_id: cat.category_id,
         name: cat.name,
@@ -402,14 +426,15 @@ const getCategoryCap3LocCap1 = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: "Lấy danh sách danh mục cấp 3 thành công",
-      data: formattedData,
+      message: "Lấy danh sách danh mục cấp cuối thành công",
+      data: formattedLevel3,
     });
   } catch (err) {
-    console.error("Lỗi lấy danh mục cấp 3:", err);
+    console.error("Lỗi lấy danh mục:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
+
 
 export {
   createCategory,
