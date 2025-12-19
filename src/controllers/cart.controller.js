@@ -62,7 +62,7 @@ const addToCart = async (req, res) => {
 
     let cart = await model.carts.findOne({ where: { user_id }, transaction: t });
     if (!cart) {
-      cart = await model.carts.create({ user_id }, { transaction: t });
+      cart = await model.carts.create({ user_id, product_variant_id }, { transaction: t });
     }
 
     let cartDetail = await model.cart_details.findOne({
