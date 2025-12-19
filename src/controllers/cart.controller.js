@@ -8,7 +8,10 @@ dotenv.config();
 const model = initModels(sequelize);
 
 const addToCart = async (req, res) => {
+  let t;
   try {
+    t = await sequelize.transaction();
+
     const user_id = req.user?.user_id;
     const { product_variant_id, quantity } = req.body;
 
@@ -20,23 +23,22 @@ const addToCart = async (req, res) => {
 
     const qty = parseInt(quantity);
 
-    if (isNaN(qty)) {
+    if (isNaN(qty) || qty < 1)
       return res.status(400).json({ message: "Số lượng không hợp lệ" });
-    }
 
-    if (qty < 1) {
-      return res.status(400).json({ message: "Số lượng tối thiểu là 1" });
-    }
-
-    if (qty > 10) {
+    if (qty > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
+
+    const user = await model.users.findByPk(user_id, { transaction: t });
+    if (!user) {
+      await t.rollback();
+      return res.status(404).json({ message: "Người dùng không tồn tại" });
     }
 
-    const user = await model.users.findByPk(user_id);
-    if (!user)
-      return res.status(404).json({ message: "Người dùng không tồn tại" });
-
+    // Lock chỉ product_variant, không khoá join product
     const variant = await model.product_variants.findByPk(product_variant_id, {
+      transaction: t,
+      lock: { level: t.LOCK.UPDATE, of: model.product_variants },
       include: [
         {
           model: model.products,
@@ -46,60 +48,73 @@ const addToCart = async (req, res) => {
       ],
     });
 
-    if (!variant)
+    if (!variant) {
+      await t.rollback();
       return res
         .status(404)
         .json({ message: "Biến thể sản phẩm không tồn tại" });
+    }
 
-    if (variant.stock <= 0)
+    if (variant.stock < 1) {
+      await t.rollback();
       return res.status(400).json({ message: "Sản phẩm đã hết hàng" });
+    }
 
-    let cart = await model.carts.findOne({ where: { user_id } });
-
+    let cart = await model.carts.findOne({ where: { user_id }, transaction: t });
     if (!cart) {
-      cart = await model.carts.create({ user_id });
+      cart = await model.carts.create({ user_id }, { transaction: t });
     }
 
     let cartDetail = await model.cart_details.findOne({
       where: { cart_id: cart.cart_id, product_variant_id },
+      transaction: t,
     });
 
     if (cartDetail) {
       const newQuantity = cartDetail.quantity + qty;
 
-      if (newQuantity > 10)
+      if (newQuantity > 10) {
+        await t.rollback();
         return res.status(400).json({ message: "Mỗi sản phẩm tối đa 10 cái" });
+      }
 
-      if (newQuantity > variant.stock)
+      if (newQuantity > variant.stock) {
+        await t.rollback();
         return res.status(400).json({ message: "Không đủ hàng trong kho" });
+      }
 
       cartDetail.quantity = newQuantity;
-      await cartDetail.save();
+      await cartDetail.save({ transaction: t });
 
+      await t.commit();
       return res.status(200).json({
         message: "Đã cập nhật số lượng trong giỏ hàng",
         data: cartDetail,
       });
     }
 
-    if (qty > variant.stock)
+    if (qty > variant.stock) {
+      await t.rollback();
       return res.status(400).json({ message: "Không đủ hàng trong kho" });
+    }
 
-    const newCartDetail = await model.cart_details.create({
-      cart_id: cart.cart_id,
-      product_variant_id,
-      quantity: qty,
-    });
+    const newCartDetail = await model.cart_details.create(
+      { cart_id: cart.cart_id, product_variant_id, quantity: qty },
+      { transaction: t }
+    );
 
+    await t.commit();
     return res.status(201).json({
       message: "Thêm vào giỏ hàng thành công",
       data: newCartDetail,
     });
   } catch (error) {
+    if (t && !t.finished) await t.rollback();
     console.error("Lỗi thêm giỏ hàng:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 const getCart = async (req, res) => {
   try {
