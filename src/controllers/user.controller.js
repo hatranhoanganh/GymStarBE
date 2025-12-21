@@ -869,13 +869,13 @@ const changePassword = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy người dùng" });
     }
 
-    // Kiểm tra mật khẩu cũ
+    
     const isOldPasswordValid = await bcrypt.compare(oldPass, user.password);
     if (!isOldPasswordValid) {
       return res.status(400).json({ message: "Mật khẩu cũ không đúng" });
     }
 
-    // Không cho phép mật khẩu mới trùng mật khẩu cũ
+   
     const isSameAsOld = await bcrypt.compare(newPass, user.password);
     if (isSameAsOld) {
       return res
@@ -883,16 +883,16 @@ const changePassword = async (req, res) => {
         .json({ message: "Mật khẩu mới không được trùng với mật khẩu cũ" });
     }
 
-    // Hash mật khẩu mới
+
     const hashedNewPassword = await bcrypt.hash(newPass, SALT_ROUNDS);
 
-    // Cập nhật mật khẩu
+    
     await user.update({
       password: hashedNewPassword,
-      updatedAt: new Date(), // Sequelize tự động có updatedAt rồi nhưng ghi rõ cho chắc
+      updatedAt: new Date(), 
     });
 
-    // Format dữ liệu trả về giống hệt hàm cũ của bạn
+   
     const formattedUser = {
       user_id: user.user_id,
       full_name: user.full_name,
