@@ -183,18 +183,32 @@ const replyReview = async (req, res) => {
   }
 };
 
-const getReviewsByVariant = async (req, res) => {
+const getReviewsByProduct = async (req, res) => {
   try {
-    const { product_variant_id } = req.params;
-    const { page = 1, limit = 10 } = req.query;
+    const { product_id } = req.params;
+    const { color, page = 1, limit = 10 } = req.query;
 
-    if (!product_variant_id)
-      return res.status(400).json({ message: "Thiếu product_variant_id" });
+    if (!product_id) {
+      return res.status(400).json({ message: "Thiếu product_id" });
+    }
+
+    const product = await model.products.findByPk(product_id);
+    if (!product) {
+      return res.status(404).json({
+        message: "Sản phẩm không tồn tại",
+      });
+    }
 
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
 
-    
+   
+    const variantWhere = { product_id };
+    if (color) {
+      variantWhere.color = color;
+    }
+
+   
     const { count: total } = await model.reviews.findAndCountAll({
       where: { is_visible: true },
       include: [
@@ -202,145 +216,22 @@ const getReviewsByVariant = async (req, res) => {
           model: model.order_details,
           as: "order_detail",
           required: true,
-          where: { product_variant_id },
+          include: [
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              required: true,
+              where: variantWhere,
+            },
+          ],
         },
       ],
+      distinct: true,
     });
-
-    const totalPages = Math.ceil(total / pageSize) || 1;
-
-    const validPage = Math.min(pageNum, totalPages);
-    const offset = (validPage - 1) * pageSize;
 
     if (total === 0) {
       return res.status(200).json({
         message: "Chưa có đánh giá nào.",
-        total,
-        page: 1,
-        totalPages: 0,
-        data: [],
-      });
-    }
-
-  
-    const { rows: reviews } = await model.reviews.findAndCountAll({
-       where: { is_visible: true },
-      include: [
-        {
-          model: model.order_details,
-          as: "order_detail",
-          required: true,
-          where: { product_variant_id },
-          include: [
-            {
-              model: model.orders,
-              as: "order",
-              attributes: ["order_id", "user_id", "status"],
-              include: [
-                {
-                  model: model.users,
-                  as: "user",
-                  attributes: ["user_id", "full_name", "email", "gender"],
-                },
-              ],
-            },
-          ],
-        },
-        {
-          model: model.review_images,
-          as: "review_images",
-          attributes: ["image"],
-        },
-        {
-          model: model.review_reply,
-          as: "review_reply",
-          include: [
-            {
-              model: model.users,
-              as: "user",
-              attributes: ["user_id", "full_name", "email"],
-            },
-          ],
-        },
-      ],
-      order: [["review_id", "DESC"]],
-      limit: pageSize,
-      offset,
-    });
-
-    const formattedData = reviews.map((r) => ({
-      review_id: r.review_id,
-      rating: r.rating,
-      comment: r.comment,
-      is_visible: r.is_visible,
-      createdAt: formatVNDateTime(r.createdAt),
-      images: r.review_images.map((img) => img.image),
-      reviewer: r.order_detail?.order?.user
-        ? {
-            user_id: r.order_detail.order.user.user_id,
-            full_name: r.order_detail.order.user.full_name,
-            email: r.order_detail.order.user.email,
-            gender: r.order_detail.order.user.gender,
-          }
-        : null,
-      reply: r.review_reply
-        ? {
-            message: r.review_reply.message,
-            replied_at: formatVNDateTime(r.review_reply.replied_at),
-            replier: r.review_reply.user
-              ? {
-                  user_id: r.review_reply.user.user_id,
-                  full_name: r.review_reply.user.full_name,
-                  email: r.review_reply.user.email,
-                }
-              : null,
-          }
-        : null,
-    }));
-
-    return res.status(200).json({
-      message: "Lấy danh sách đánh giá thành công",
-      total,
-      page: validPage,
-      totalPages,
-      data: formattedData,
-    });
-  } catch (error) {
-    console.error("Lỗi getReviewsByVariant:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
-};
-
-const getReviewsByVariantByRating = async (req, res) => {
-  try {
-    const { product_variant_id } = req.params;
-    const { rating, page = 1, limit = 10 } = req.query;
-
-    if (!product_variant_id)
-      return res.status(400).json({ message: "Thiếu product_variant_id" });
-    if (!rating)
-      return res.status(400).json({ message: "Thiếu rating để lọc" });
-
-    const pageSize = parseInt(limit) || 10;
-    const pageNum = parseInt(page) || 1;
-
-
-    const total = await model.reviews.count({
-        where: { rating: parseInt(rating), is_visible: true },
-      include: [
-        {
-          model: model.order_details,
-          as: "order_detail",
-          required: true,
-          where: { product_variant_id: parseInt(product_variant_id) },
-        },
-      ],
-    });
-
-
-    if (total === 0) {
-      return res.status(200).json({
-        message: "Chưa có đánh giá nào .",
         total: 0,
         page: 1,
         totalPages: 0,
@@ -353,15 +244,21 @@ const getReviewsByVariantByRating = async (req, res) => {
     const offset = (validPage - 1) * pageSize;
 
     
-    const reviews = await model.reviews.findAll({
-      where: { rating: parseInt(rating), is_visible: true },
+    const { rows: reviews } = await model.reviews.findAndCountAll({
+      where: { is_visible: true },
       include: [
         {
           model: model.order_details,
           as: "order_detail",
           required: true,
-          where: { product_variant_id: parseInt(product_variant_id) },
           include: [
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              required: true,
+              where: variantWhere,
+              attributes: ["product_variant_id", "color", "size"],
+            },
             {
               model: model.orders,
               as: "order",
@@ -396,35 +293,25 @@ const getReviewsByVariantByRating = async (req, res) => {
       order: [["review_id", "DESC"]],
       limit: pageSize,
       offset,
+      distinct: true,
     });
 
- 
-    const formattedData = reviews.map((r) => ({
+    const data = reviews.map((r) => ({
       review_id: r.review_id,
       rating: r.rating,
       comment: r.comment,
-      is_visible: r.is_visible,
       createdAt: formatVNDateTime(r.createdAt),
-      images: r.review_images.map((img) => img.image),
-      reviewer: r.order_detail?.order?.user
-        ? {
-            user_id: r.order_detail.order.user.user_id,
-            full_name: r.order_detail.order.user.full_name,
-            email: r.order_detail.order.user.email,
-            gender: r.order_detail.order.user.gender,
-          }
-        : null,
+      images: r.review_images.map((i) => i.image),
+      variant: {
+  color: r.order_detail.product_variant.color,
+  size: r.order_detail.product_variant.size,
+},
+      reviewer: r.order_detail.order.user,
       reply: r.review_reply
         ? {
             message: r.review_reply.message,
             replied_at: formatVNDateTime(r.review_reply.replied_at),
-            replier: r.review_reply.user
-              ? {
-                  user_id: r.review_reply.user.user_id,
-                  full_name: r.review_reply.user.full_name,
-                  email: r.review_reply.user.email,
-                }
-              : null,
+            replier: r.review_reply.user,
           }
         : null,
     }));
@@ -434,13 +321,16 @@ const getReviewsByVariantByRating = async (req, res) => {
       total,
       page: validPage,
       totalPages,
-      data: formattedData,
+      data,
     });
   } catch (error) {
-    console.error("Lỗi getReviewsByVariantByRating:", error);
+    console.error("getReviewsByProduct error:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
+
 
 const toggleReviewVisibility = async (req, res) => {
   try {
@@ -454,7 +344,7 @@ const toggleReviewVisibility = async (req, res) => {
     if (!review)
       return res.status(404).json({ message: "Không tìm thấy đánh giá" });
 
-    // Toggle trạng thái is_visible
+  
     review.is_visible = !review.is_visible;
     await review.save();
 
@@ -676,8 +566,8 @@ const getReviewDetailByOrder = async (req, res) => {
 export {
   createReview,
   replyReview,
-  getReviewsByVariant,
-  getReviewsByVariantByRating,
+  getReviewsByProduct,
+
   toggleReviewVisibility,
   getAllReviews,
   getReviewDetailByOrder

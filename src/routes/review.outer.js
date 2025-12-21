@@ -4,8 +4,7 @@ import {requireRole} from "../middleware/role.middleware.js";
 import upload from "../utils/multer.js";
 import { createReview, 
   replyReview, 
-  getReviewsByVariant,
-  getReviewsByVariantByRating,
+  getReviewsByProduct,
   toggleReviewVisibility,
   getAllReviews,
 getReviewDetailByOrder,
@@ -33,8 +32,7 @@ ReviewRouter.post(
 
 ReviewRouter.post("/TraLoiDanhGia", verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"), replyReview);
 ReviewRouter.put("/CapNhatTrangThaiDanhGia/:review_id", verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"), toggleReviewVisibility);
-ReviewRouter.get("/LayDanhSachDanhGiaCua1BienTheTheoRating/:product_variant_id",  getReviewsByVariantByRating);
-ReviewRouter.get("/LayDanhSachDanhGiaCua1BienThe/:product_variant_id",  getReviewsByVariant);
+ReviewRouter.get("/LayDanhSachDanhGiaCuaSanPham/:product_id",  getReviewsByProduct);
 ReviewRouter.get("/LayDanhSachTatCaDanhGia",verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"),  getAllReviews);
 ReviewRouter.get("/LayDanhGiaCuaChiTietDonHang/:order_detail_id",verifyToken,  getReviewDetailByOrder);
 

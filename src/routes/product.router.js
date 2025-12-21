@@ -5,10 +5,10 @@ import {requireRole} from "../middleware/role.middleware.js";
 import {
   addProductVariant,
   addSizeToVariant,
-  getProductByDanhMucCap1,
   getAllProducts,
   updateFullProduct,
   getActiveProducts,
+  getNewProductsLast2Days,
   getProductDetail,
   getProductByKeyWordAdmin,
   getProductByKeyWordUser,
@@ -16,8 +16,7 @@ import {
   addFullProduct,
   getProductsByStatus,
   deleteProduct,
-  getProductByDanhMucCap2,
-  getProductByDanhMucCap3,
+  getProductByCategory,
 } from "../controllers/product.controller.js";
 
 
@@ -75,11 +74,10 @@ ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
 
 //không cần phân quyền
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
+ProductRouter.get("/LayTatCaSanPhamMoiTao2Ngay", getNewProductsLast2Days);
 ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
-ProductRouter.get("/LaySanPhamTheoDanhMucCap1/:root_id", getProductByDanhMucCap1);
-ProductRouter.get("/LaySanPhamTheoDanhMucCap2/:category_id", getProductByDanhMucCap2);
-ProductRouter.get("/LaySanPhamTheoDanhMucCap3/:category_id", getProductByDanhMucCap3);
+ProductRouter.get("/LaySanPhamTheoDanhMuc/:category_id", getProductByCategory);
 
 
 export default ProductRouter;

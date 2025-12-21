@@ -1,6 +1,6 @@
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
-import { Op,Sequelize } from "sequelize";
+import { Op, Sequelize } from "sequelize";
 import bcrypt from "bcryptjs";
 import jwt from "jsonwebtoken";
 import dotenv from "dotenv";
@@ -50,6 +50,16 @@ const registerUser = async (req, res) => {
       return res.status(400).json({ message: "Mật khẩu phải ít nhất 8 ký tự" });
     }
 
+    //     const strongPasswordRegex =
+    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#^_+\-])[A-Za-z\d@$!%*?&.#^_+\-]{8,}$/;
+
+    // if (!strongPasswordRegex.test(trimmedPassword)) {
+    //   return res.status(400).json({
+    //     message:
+    //       "Mật khẩu phải gồm chữ hoa, chữ thường, số và ký tự đặc biệt",
+    //   });
+    // }
+
     const COOLDOWN_KEY = `register_cooldown:${trimmedEmail}`;
     const COOLDOWN_SECONDS = 2 * 60;
 
@@ -92,7 +102,11 @@ const registerUser = async (req, res) => {
 
       if (existingUser.status === "chưa xác nhận") {
         const newToken = jwt.sign(
-          { user_id: existingUser.user_id, email: existingUser.email,purpose: "email_verify" },
+          {
+            user_id: existingUser.user_id,
+            email: existingUser.email,
+            purpose: "email_verify",
+          },
           process.env.JWT_SECRET,
           { expiresIn: "2m" }
         );
@@ -123,7 +137,6 @@ const registerUser = async (req, res) => {
           hint: "Vui lòng kiểm tra hộp thư (bao gồm Spam/Junk). Link có hiệu lực 2 phút.",
           data: formattedUser,
           resend: true,
-      
         });
       }
     }
@@ -155,7 +168,11 @@ const registerUser = async (req, res) => {
     };
 
     const verificationToken = jwt.sign(
-      { user_id: newUser.user_id, email: newUser.email,purpose: "email_verify" },
+      {
+        user_id: newUser.user_id,
+        email: newUser.email,
+        purpose: "email_verify",
+      },
       process.env.JWT_SECRET,
       { expiresIn: "2m" }
     );
@@ -167,7 +184,6 @@ const registerUser = async (req, res) => {
       message:
         "Đăng ký thành công! Vui lòng kiểm tra hộp thư (bao gồm Spam/Junk) để xác nhận tài khoản. Link có hiệu lực 2 phút.",
       data: formattedUser,
-       
     });
   } catch (error) {
     console.error("Lỗi đăng ký:", error);
@@ -226,7 +242,9 @@ const verifyEmail = async (req, res) => {
           <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#f0fff4;">
             <h3 style="color:#48bb78;">Tài khoản đã được xác nhận</h3>
             <p>Bạn có thể đăng nhập ngay bây giờ.</p>
-            <a href="${process.env.CLIENT_URL || "http://localhost:5173"}/dang-nhap"
+            <a href="${
+              process.env.CLIENT_URL || "http://localhost:5173"
+            }/dang-nhap"
               style="background:#48bb78; color:white; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:bold; margin-top:20px; display:inline-block;">
               Đăng nhập ngay
             </a>
@@ -235,10 +253,8 @@ const verifyEmail = async (req, res) => {
     }
 
     try {
-    
-      const verified = jwt.verify(token, process.env.JWT_SECRET); 
+      const verified = jwt.verify(token, process.env.JWT_SECRET);
 
-     
       if (verified.purpose !== "email_verify") {
         return res.status(400).send(`
           <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
@@ -271,7 +287,7 @@ const verifyEmail = async (req, res) => {
     } catch (verifyErr) {
       if (verifyErr.name === "TokenExpiredError") {
         const newToken = jwt.sign(
-          { user_id: user.user_id, email: user.email,purpose: "email_verify" },
+          { user_id: user.user_id, email: user.email, purpose: "email_verify" },
           process.env.JWT_SECRET,
           { expiresIn: "2m" }
         );
@@ -324,7 +340,6 @@ const loginUser = async (req, res) => {
   try {
     const { email, password } = req.body;
 
-
     const trimmedEmail = email?.trim().toLowerCase();
     const trimmedPassword = password?.trim();
 
@@ -343,7 +358,6 @@ const loginUser = async (req, res) => {
       });
     }
 
- 
     const user = await model.users.findOne({
       where: { email: trimmedEmail },
       include: [
@@ -362,9 +376,7 @@ const loginUser = async (req, res) => {
       });
     }
 
- 
     if (user.status === "chưa xác nhận") {
-     
       const newToken = jwt.sign(
         { user_id: user.user_id, email: user.email, purpose: "email_verify" },
         process.env.JWT_SECRET,
@@ -384,7 +396,8 @@ const loginUser = async (req, res) => {
     if (user.status === "bị cấm") {
       return res.status(403).json({
         success: false,
-        message: "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.",
+        message:
+          "Tài khoản của bạn đã bị khóa. Vui lòng liên hệ quản trị viên.",
       });
     }
 
@@ -396,27 +409,24 @@ const loginUser = async (req, res) => {
       });
     }
 
-   
     const accessToken = jwt.sign(
       {
         user_id: user.user_id,
         email: user.email,
         role_id: user.role?.role_id || 1,
       },
-      process.env.JWT_SECRET,          
+      process.env.JWT_SECRET,
       { expiresIn: "15d" }
     );
 
     const refreshToken = jwt.sign(
       { user_id: user.user_id },
-      process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET, 
+      process.env.REFRESH_TOKEN_SECRET || process.env.JWT_SECRET,
       { expiresIn: "30d" }
     );
 
-    
     await user.update({ refresh_token: refreshToken });
 
- 
     const formattedUser = {
       user_id: user.user_id,
       full_name: user.full_name,
@@ -436,9 +446,7 @@ const loginUser = async (req, res) => {
       message: "Đăng nhập thành công!",
       user: formattedUser,
       access_token: accessToken,
-   
     });
-
   } catch (error) {
     console.error("Lỗi đăng nhập:", error);
     return res.status(500).json({
@@ -677,13 +685,19 @@ const updateStatus = async (req, res) => {
   }
 };
 const updateUser = async (req, res) => {
-try {
-    const userId = req.user.user_id; 
+  try {
+    const userId = req.user.user_id;
 
     const { full_name, gender, birth_date } = req.body;
 
     const user = await model.users.findByPk(userId, {
-      include: [{ model: model.roles, as: "role", attributes: ["role_id", "role_name"] }],
+      include: [
+        {
+          model: model.roles,
+          as: "role",
+          attributes: ["role_id", "role_name"],
+        },
+      ],
     });
 
     if (!user) {
@@ -695,7 +709,11 @@ try {
     // Xử lý full_name
     if (full_name !== undefined) {
       const trimmedName = full_name.trim();
-      if (trimmedName === "" || trimmedName.length < 2 || trimmedName.length > 100) {
+      if (
+        trimmedName === "" ||
+        trimmedName.length < 2 ||
+        trimmedName.length > 100
+      ) {
         return res.status(400).json({
           message: "Họ tên phải từ 2–100 ký tự và không được để trống",
         });
@@ -708,7 +726,6 @@ try {
       updateData.full_name = trimmedName;
     }
 
-   
     if (gender !== undefined) {
       if (!["nam", "nữ", null, ""].includes(gender)) {
         return res.status(400).json({ message: "Giới tính không hợp lệ" });
@@ -723,13 +740,22 @@ try {
         updateData.birth_date = null;
       } else {
         if (!/^\d{2}-\d{2}-\d{4}$/.test(trimmed)) {
-          return res.status(400).json({ message: "Ngày sinh phải định dạng DD-MM-YYYY" });
+          return res
+            .status(400)
+            .json({ message: "Ngày sinh phải định dạng DD-MM-YYYY" });
         }
 
         const [day, month, year] = trimmed.split("-").map(Number);
         const currentYear = new Date().getFullYear();
 
-        if (day < 1 || day > 31 || month < 1 || month > 12 || year < 1900 || year > currentYear) {
+        if (
+          day < 1 ||
+          day > 31 ||
+          month < 1 ||
+          month > 12 ||
+          year < 1900 ||
+          year > currentYear
+        ) {
           return res.status(400).json({
             message: `Ngày/tháng/năm không hợp lệ (năm ≤ ${currentYear})`,
           });
@@ -751,12 +777,17 @@ try {
           });
         }
 
-        updateData.birth_date = `${year}-${String(month).padStart(2, "0")}-${String(day).padStart(2, "0")}`;
+        updateData.birth_date = `${year}-${String(month).padStart(
+          2,
+          "0"
+        )}-${String(day).padStart(2, "0")}`;
       }
     }
 
     if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({ message: "Không có thông tin nào để cập nhật" });
+      return res
+        .status(400)
+        .json({ message: "Không có thông tin nào để cập nhật" });
     }
 
     await user.update(updateData);
@@ -788,16 +819,14 @@ const SALT_ROUNDS = 10;
 
 const changePassword = async (req, res) => {
   try {
-    const userId = req.user.user_id; 
+    const userId = req.user.user_id;
 
     const { old_password, new_password, confirm_password } = req.body;
 
-  
     const oldPass = old_password?.trim();
     const newPass = new_password?.trim();
     const confirmPass = confirm_password?.trim();
 
-  
     if (!oldPass || !newPass || !confirmPass) {
       return res
         .status(400)
@@ -815,6 +844,16 @@ const changePassword = async (req, res) => {
         .status(400)
         .json({ message: "Mật khẩu mới phải có ít nhất 8 ký tự" });
     }
+
+    //     const strongPasswordRegex =
+    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#^_+\-])[A-Za-z\d@$!%*?&.#^_+\-]{8,}$/;
+
+    // if (!strongPasswordRegex.test(newPass)) {
+    //   return res.status(400).json({
+    //     message:
+    //       "Mật khẩu mới phải gồm chữ hoa, chữ thường, số và ký tự đặc biệt",
+    //   });
+    // }
 
     const user = await model.users.findByPk(userId, {
       include: [
@@ -1011,6 +1050,14 @@ const resetPassword = async (req, res) => {
         .status(400)
         .json({ message: "Mật khẩu phải có ít nhất 8 ký tự" });
     }
+    // const strongPasswordRegex =
+    //   /^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)(?=.*[@$!%*?&.#^_+\-])[A-Za-z\d@$!%*?&.#^_+\-]{8,}$/;
+
+    // if (!strongPasswordRegex.test(trimmedNewPassword)) {
+    //   return res.status(400).json({
+    //     message: "Mật khẩu phải gồm chữ hoa, chữ thường, số và ký tự đặc biệt",
+    //   });
+    // }
 
     let decoded;
     try {
@@ -1138,36 +1185,28 @@ const getUserByKeyword = async (req, res) => {
     const pageSize = parseInt(limit, 10) || 10;
     const searchTerm = `%${keyword.trim()}%`;
 
-   
     const searchCondition = {
       [Op.or]: [
-      
-        Sequelize.where(
-          Sequelize.col("users.user_id"),
-          {
-            [Op.eq]: Number(keyword) || 0,
-          }
-        ),
+        Sequelize.where(Sequelize.col("users.user_id"), {
+          [Op.eq]: Number(keyword) || 0,
+        }),
 
-        
         Sequelize.where(
           Sequelize.fn("unaccent", Sequelize.col("users.full_name")),
           {
-            [Op.iLike]: Sequelize.fn("unaccent", searchTerm)
+            [Op.iLike]: Sequelize.fn("unaccent", searchTerm),
           }
         ),
 
-     
         Sequelize.where(
           Sequelize.fn("unaccent", Sequelize.col("users.email")),
           {
-            [Op.iLike]: Sequelize.fn("unaccent", searchTerm)
+            [Op.iLike]: Sequelize.fn("unaccent", searchTerm),
           }
-        )
-      ]
+        ),
+      ],
     };
 
-  
     const total = await model.users.count({
       where: searchCondition,
       distinct: true,
@@ -1191,7 +1230,6 @@ const getUserByKeyword = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    
     const users = await model.users.findAll({
       attributes: [
         "user_id",
@@ -1215,7 +1253,6 @@ const getUserByKeyword = async (req, res) => {
       order: [["createdAt", "DESC"]],
     });
 
-  
     const formattedData = users.map((u) => ({
       user_id: u.user_id,
       full_name: u.full_name,
@@ -1246,7 +1283,6 @@ const getUserByKeyword = async (req, res) => {
     });
   }
 };
-
 
 const assignUserRole = async (req, res) => {
   try {

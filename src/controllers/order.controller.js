@@ -30,44 +30,59 @@ const placeDirectOrder = async (req, res) => {
 
     const finalQuantity = parseInt(quantity);
 
-    if (isNaN(finalQuantity)) {
+    if (isNaN(finalQuantity))
       return res.status(400).json({ message: "Số lượng không hợp lệ" });
-    }
 
-    if (finalQuantity < 1) {
+    if (finalQuantity < 1)
       return res.status(400).json({ message: "Số lượng tối thiểu là 1" });
-    }
 
-    if (finalQuantity > 10) {
+    if (finalQuantity > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
-    }
 
+ 
     const address = address_id
-      ? await model.user_addresses.findOne({ where: { address_id, user_id } })
+      ? await model.user_addresses.findOne({
+          where: { address_id, user_id },
+          transaction: t,
+        })
       : await model.user_addresses.findOne({
           where: { user_id, is_default: true },
+          transaction: t,
         });
+
     if (!address)
       return res.status(400).json({ message: "Địa chỉ không tồn tại" });
 
-    const variant = await model.product_variants.findByPk(product_variant_id, {
-      include: [{ model: model.products, as: "product" }],
+   
+    const variant = await model.product_variants.findOne({
+      where: { product_variant_id },
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
+
     if (!variant)
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+
     if (variant.stock < finalQuantity)
       return res
         .status(400)
         .json({ message: "Hết hàng hoặc không đủ số lượng" });
 
-    const originalPrice = Number(variant.product.price);
-    const discountPercent = variant.product.discount
-      ? parseFloat(variant.product.discount)
-      : 0;
-    let finalPrice;
+    
+    const product = await model.products.findByPk(variant.product_id, {
+      transaction: t,
+    });
 
+    if (!product)
+      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+
+   
+    const originalPrice = Number(product.price);
+    const discountPercent = product.discount
+      ? parseFloat(product.discount)
+      : 0;
+
+    let finalPrice;
     if (discountPercent > 0) {
       const discounted = originalPrice * (1 - discountPercent / 100);
       finalPrice = Math.round(discounted / 1000) * 1000;
@@ -76,6 +91,7 @@ const placeDirectOrder = async (req, res) => {
     }
 
     const totalAmount = finalPrice * finalQuantity;
+
 
     const newOrder = await model.orders.create(
       {
@@ -103,12 +119,14 @@ const placeDirectOrder = async (req, res) => {
       { transaction: t }
     );
 
+ 
     await model.product_variants.decrement("stock", {
       by: finalQuantity,
       where: { product_variant_id },
       transaction: t,
     });
 
+  
     const payment = await model.payments.create(
       {
         order_id: newOrder.order_id,
@@ -122,24 +140,17 @@ const placeDirectOrder = async (req, res) => {
 
     await t.commit();
 
+    
     if (method === "MOMO") {
-      let momoResult;
       try {
-        momoResult = await prepareMomoPayment(newOrder.order_id);
+        const momoResult = await prepareMomoPayment(newOrder.order_id);
         return res.json({
           message: "Chuyển sang thanh toán MoMo",
           order_id: newOrder.order_id,
-          payment: {
-            payment_id: payment.payment_id,
-            method: payment.method,
-            status: payment.status,
-            total: payment.total,
-          },
+          payment,
           payUrl: momoResult.payUrl,
         });
       } catch (error) {
-        console.error("Lỗi kết nối MoMo → hủy đơn và hoàn stock");
-
         await model.payments.destroy({
           where: { order_id: newOrder.order_id },
         });
@@ -156,12 +167,7 @@ const placeDirectOrder = async (req, res) => {
     return res.json({
       message: "Đặt hàng COD thành công",
       order_id: newOrder.order_id,
-      payment: {
-        payment_id: payment.payment_id,
-        method: payment.method,
-        status: payment.status,
-        total: payment.total,
-      },
+      payment,
     });
   } catch (error) {
     if (t && !t.finished) await t.rollback();
@@ -169,6 +175,7 @@ const placeDirectOrder = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 const placeCartOrder = async (req, res) => {

@@ -1,5 +1,5 @@
 import dotenv from "dotenv";
-dotenv.config({ path: ".env.local" });  // thêm dòng này nếu chưa load .env
+dotenv.config({ path: ".env.local" });  
 
 import { createClient } from "redis";
 
@@ -9,11 +9,10 @@ if (!redisUrl) {
   throw new Error("❌ REDIS_URL chưa được set trong .env");
 }
 
-// Nếu URL bắt đầu bằng rediss:// → TLS
+
 const useTls = redisUrl.startsWith("rediss://");
 
-// console.log("🔌 Redis URL:", redisUrl);
-// console.log("🔐 TLS enabled:", useTls);
+
 
 const redis = createClient({
   url: redisUrl,
@@ -35,7 +34,7 @@ export async function connectRedis() {
   if (!isConnected) {
     await redis.connect();
     isConnected = true;
-    // console.log("✅ Redis connected");
+ 
   }
 }
 

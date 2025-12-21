@@ -9,7 +9,6 @@ import fs from "fs/promises";
 dotenv.config();
 const model = initModels(sequelize);
 
-
 const removeVietnameseTones = (str = "") => {
   return str
     .normalize("NFD")
@@ -17,7 +16,6 @@ const removeVietnameseTones = (str = "") => {
     .replace(/đ/g, "d")
     .replace(/Đ/g, "D");
 };
-
 
 const buildCategoryCode = (name = "") => {
   return removeVietnameseTones(name)
@@ -28,7 +26,6 @@ const buildCategoryCode = (name = "") => {
     .toUpperCase();
 };
 
-
 const getColorCode = (color = "") => {
   return removeVietnameseTones(color)
     .trim()
@@ -37,15 +34,17 @@ const getColorCode = (color = "") => {
     .join("");
 };
 
-const buildSKU = (categoryName, productId, color, size) => {
+
+const buildSKUWithIndex = (categoryName, productId, color, size, index) => {
   const categoryCode = buildCategoryCode(categoryName);
   const colorCode = getColorCode(color);
+
   let sku = `${categoryCode}${productId}-${colorCode}`;
   if (size) sku += `-${size}`;
+  sku += `-${index}`;
+
   return sku;
 };
-
-
 
 const addFullProduct = async (req, res) => {
   const filesToDelete = new Set();
@@ -293,19 +292,37 @@ const addFullProduct = async (req, res) => {
       { transaction: t }
     );
 
+    const existingVariantCount = await model.product_variants.count({
+      where: { product_id: newProduct.product_id },
+      transaction: t,
+    });
+
+    let skuIndex = existingVariantCount + 1;
+
     const createdVariants = [];
+
     for (const v of cleanVariants) {
+      const sku = buildSKUWithIndex(
+        category.name,
+        newProduct.product_id,
+        v.color,
+        v.size,
+        skuIndex
+      );
+
       const variant = await model.product_variants.create(
         {
           product_id: newProduct.product_id,
           color: v.color,
           size: v.size,
           stock: v.stock,
-          sku: buildSKU(category.name, newProduct.product_id, v.color, v.size),
+          sku,
         },
         { transaction: t }
       );
-      createdVariants.push(variant);  
+
+      createdVariants.push(variant);
+      skuIndex++;
     }
 
     const thumbResult = await cloudinary.uploader.upload(
@@ -520,9 +537,22 @@ const addProductVariant = async (req, res) => {
         return sendError(`Màu ${v.color} chỉ được upload tối đa 10 ảnh`);
     }
 
+    const existingVariantCount = await model.product_variants.count({
+      where: { product_id },
+    });
+
+    let skuIndex = existingVariantCount + 1;
     const createdVariants = [];
+
     for (const v of cleanVariants) {
-      const sku = buildSKU(product.category.name, product_id, v.color, v.size);
+      const sku = buildSKUWithIndex(
+        product.category.name,
+        product_id,
+        v.color,
+        v.size,
+        skuIndex
+      );
+
       const newVar = await model.product_variants.create({
         product_id,
         color: v.color,
@@ -530,7 +560,9 @@ const addProductVariant = async (req, res) => {
         stock: v.stock,
         sku,
       });
+
       createdVariants.push(newVar);
+      skuIndex++;
     }
 
     const imagesByColor = {};
@@ -996,12 +1028,18 @@ const addSizeToVariant = async (req, res) => {
         `Size "${size}" đã tồn tại trong màu "${colorTrimmed}".`
       );
     }
+    const variantCount = await model.product_variants.count({
+      where: { product_id },
+    });
 
-    const sku = buildSKU(
+    const skuIndex = variantCount + 1;
+
+    const sku = buildSKUWithIndex(
       product.category.name,
       product.product_id,
       colorTrimmed,
-      size
+      size,
+      skuIndex
     );
 
     const newVariant = await model.product_variants.create({
@@ -1061,149 +1099,7 @@ const getAllChildCategoryIds = (categories, parentId) => {
   return result;
 };
 
-const getProductByDanhMucCap1 = async (req, res) => {
-  try {
-    const root_id = parseInt(req.params.root_id);
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
 
-    if (!root_id) {
-      return res
-        .status(400)
-        .json({ message: "Danh mục cấp 1 không được để trống" });
-    }
-
-    const rootCategory = await model.categories.findByPk(root_id, {
-      include: [{ model: model.categories, as: "parent" }],
-    });
-    if (!rootCategory)
-      return res.status(404).json({ message: "Danh mục cấp 1 không tồn tại" });
-
-    if (rootCategory.parent_id !== null)
-      return res
-        .status(400)
-        .json({ message: "root_id không phải danh mục cấp 1" });
-
-    const allCategories = await model.categories.findAll({
-      attributes: ["category_id", "parent_id"],
-      raw: true,
-    });
-
-    const childIds = getAllChildCategoryIds(allCategories, root_id);
-    childIds.push(root_id);
-
-    const total = await model.products.count({
-      where: { category_id: { [Op.in]: childIds },
-      status: "đang bán",
-     },
-    });
-    if (total === 0) {
-      return res.status(200).json({
-        message: "Chưa có sản phẩm trong danh mục này.",
-        total: 0,
-        page: 1,
-        totalPages: 0,
-        data: [],
-      });
-    }
-    const totalPages = Math.ceil(total / limit);
-    const validPage = Math.min(page, totalPages || 1);
-    const offset = (validPage - 1) * limit;
-
-    const products = await model.products.findAll({
-      where: { category_id: { [Op.in]: childIds },
-      status: "đang bán",
-    },
-      limit,
-      offset,
-      order: [["name", "ASC"]],
-      attributes: [
-        "product_id",
-        "name",
-        "description",
-        "discount",
-        "price",
-        "spec",
-        "thumbnail",
-        "status",
-        "category_id",
-        "createdAt",
-        "updatedAt",
-      ],
-      include: [
-        {
-          model: model.categories,
-          as: "category",
-          attributes: ["name", "parent_id"],
-          include: [
-            {
-              model: model.categories,
-              as: "parent",
-              attributes: ["name"],
-            },
-          ],
-        },
-        {
-          model: model.product_variants,
-          as: "product_variants",
-          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
-        },
-        {
-          model: model.product_images,
-          as: "product_images",
-          attributes: ["product_image_id", "color", "image"],
-        },
-      ],
-      nest: true,
-    });
-
-    const formattedData = products.map((p) => {
-      const colors = {};
-      p.product_images.forEach((img) => {
-        if (!colors[img.color])
-          colors[img.color] = { color: img.color, images: [] };
-        colors[img.color].images.push(img.image);
-      });
-
-      const product_variants = p.product_variants.map((v) => ({
-        product_variant_id: v.product_variant_id,
-        color: v.color,
-        size: v.size,
-        stock: v.stock,
-        sku: v.sku,
-      }));
-
-      return {
-        product_id: p.product_id,
-        name: p.name,
-        description: p.description,
-        discount: p.discount,
-        price: p.price,
-        spec: p.spec || null,
-        thumbnail: p.thumbnail,
-        status: p.status,
-        category_id: p.category_id,
-        category_name: p.category?.name || null,
-        parent_category_name: p.category?.parent?.name || null,
-        createdAt: formatVNDateTime(p.createdAt),
-        updatedAt: formatVNDateTime(p.updatedAt),
-        product_variants,
-        colors: Object.values(colors),
-      };
-    });
-
-    return res.status(200).json({
-      message: "Lấy sản phẩm từ danh mục cấp 1 thành công",
-      total,
-      page: validPage,
-      totalPages,
-      data: formattedData,
-    });
-  } catch (err) {
-    console.error("Lỗi getProductByDanhMucCap1:", err);
-    return res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-};
 
 const getAllProducts = async (req, res) => {
   try {
@@ -1428,6 +1324,139 @@ const getActiveProducts = async (req, res) => {
     });
   } catch (err) {
     console.error("Lỗi getActiveProducts:", err);
+    return res.status(500).json({
+      message: "Lỗi server",
+      error: err.message,
+    });
+  }
+};
+const getNewProductsLast2Days = async (req, res) => {
+  try {
+    const page = parseInt(req.query.page) || 1;
+    const limit = parseInt(req.query.limit) || 10;
+
+    // ⏱ Mốc thời gian: 2 ngày trước
+    const twoDaysAgo = new Date();
+    twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
+
+    // 🔢 Đếm tổng
+    const total = await model.products.count({
+      where: {
+        status: "đang bán",
+        createdAt: {
+          [Op.gte]: twoDaysAgo,
+        },
+      },
+    });
+
+    if (total === 0) {
+      return res.status(200).json({
+        message: "Không có sản phẩm mới trong 2 ngày gần đây",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const totalPages = Math.ceil(total / limit);
+    const validPage = Math.min(page, totalPages || 1);
+    const offset = (validPage - 1) * limit;
+
+    const products = await model.products.findAll({
+      where: {
+        status: "đang bán",
+        createdAt: {
+          [Op.gte]: twoDaysAgo,
+        },
+      },
+      limit,
+      offset,
+      order: [["createdAt", "DESC"]],
+      attributes: [
+        "product_id",
+        "name",
+        "description",
+        "discount",
+        "price",
+        "spec",
+        "thumbnail",
+        "status",
+        "category_id",
+        "createdAt",
+        "updatedAt",
+      ],
+      include: [
+        {
+          model: model.categories,
+          as: "category",
+          attributes: ["name", "parent_id"],
+          include: [
+            {
+              model: model.categories,
+              as: "parent",
+              attributes: ["name"],
+            },
+          ],
+        },
+        {
+          model: model.product_variants,
+          as: "product_variants",
+          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
+        },
+        {
+          model: model.product_images,
+          as: "product_images",
+          attributes: ["product_image_id", "color", "image"],
+        },
+      ],
+      nest: true,
+    });
+
+    // 🔄 Format data (GIỮ NGUYÊN LOGIC CŨ)
+    const formattedData = products.map((p) => {
+      const colors = {};
+      p.product_images.forEach((img) => {
+        if (!colors[img.color]) {
+          colors[img.color] = { color: img.color, images: [] };
+        }
+        colors[img.color].images.push(img.image);
+      });
+
+      return {
+        product_id: p.product_id,
+        name: p.name,
+        description: p.description,
+        discount: p.discount,
+        price: p.price,
+        spec: p.spec || null,
+        thumbnail: p.thumbnail,
+        status: p.status,
+        category_id: p.category_id,
+        category_name: p.category?.name || null,
+        parent_category_name: p.category?.parent?.name || null,
+        createdAt: formatVNDateTime(p.createdAt),
+        updatedAt: formatVNDateTime(p.updatedAt),
+        product_variants: p.product_variants.map((v) => ({
+          product_variant_id: v.product_variant_id,
+          color: v.color,
+          size: v.size,
+          stock: v.stock,
+          sku: v.sku,
+        })),
+        colors: Object.values(colors),
+      };
+    });
+
+    return res.status(200).json({
+      message: "Lấy danh sách sản phẩm mới trong 2 ngày gần đây thành công",
+      total,
+      page: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (err) {
+    console.error("Lỗi getNewProductsLast2Days:", err);
     return res.status(500).json({
       message: "Lỗi server",
       error: err.message,
@@ -1751,10 +1780,10 @@ const getProductDetail = async (req, res) => {
     const { product_id } = req.params;
 
     const product = await model.products.findOne({
-  where: {
-    product_id: product_id,
-    status: "đang bán",
-  },
+      where: {
+        product_id: product_id,
+        status: "đang bán",
+      },
       attributes: [
         "product_id",
         "name",
@@ -2026,7 +2055,8 @@ const deleteProduct = async (req, res) => {
     });
   }
 };
-const getProductByDanhMucCap2 = async (req, res) => {
+
+const getProductByCategory = async (req, res) => {
   try {
     const category_id = parseInt(req.params.category_id);
     const page = parseInt(req.query.page) || 1;
@@ -2035,34 +2065,43 @@ const getProductByDanhMucCap2 = async (req, res) => {
     if (!category_id) {
       return res
         .status(400)
-        .json({ message: "Danh mục cấp 2 không được để trống" });
+        .json({ message: "category_id không được để trống" });
     }
 
+    // 1️⃣ Lấy category + parent
     const category = await model.categories.findByPk(category_id, {
       include: [{ model: model.categories, as: "parent" }],
     });
 
-    if (!category)
+    if (!category) {
       return res.status(404).json({ message: "Danh mục không tồn tại" });
-
-   
-    if (!category.parent || category.parent.parent_id !== null) {
-      return res
-        .status(400)
-        .json({ message: "category_id không phải danh mục cấp 2" });
     }
 
-    const allCategories = await model.categories.findAll({
-      attributes: ["category_id", "parent_id"],
-      raw: true,
-    });
+    // 2️⃣ Xác định cấp
+    let level = 3;
+    if (category.parent_id === null) {
+      level = 1;
+    } else if (category.parent && category.parent.parent_id === null) {
+      level = 2;
+    }
 
-    const childIds = getAllChildCategoryIds(allCategories, category_id);
-    childIds.push(category_id);
+    // 3️⃣ Lấy danh sách category_id cần query
+    let categoryIds = [category_id];
 
+    if (level === 1 || level === 2) {
+      const allCategories = await model.categories.findAll({
+        attributes: ["category_id", "parent_id"],
+        raw: true,
+      });
+
+      const childIds = getAllChildCategoryIds(allCategories, category_id);
+      categoryIds = [...new Set([...childIds, category_id])];
+    }
+
+    // 4️⃣ Đếm tổng sản phẩm
     const total = await model.products.count({
       where: {
-        category_id: { [Op.in]: childIds },
+        category_id: { [Op.in]: categoryIds },
         status: "đang bán",
       },
     });
@@ -2078,12 +2117,13 @@ const getProductByDanhMucCap2 = async (req, res) => {
     }
 
     const totalPages = Math.ceil(total / limit);
-    const validPage = Math.min(page, totalPages || 1);
+    const validPage = Math.min(page, totalPages);
     const offset = (validPage - 1) * limit;
 
+    // 5️⃣ Lấy sản phẩm
     const products = await model.products.findAll({
       where: {
-        category_id: { [Op.in]: childIds },
+        category_id: { [Op.in]: categoryIds },
         status: "đang bán",
       },
       limit,
@@ -2129,11 +2169,13 @@ const getProductByDanhMucCap2 = async (req, res) => {
       nest: true,
     });
 
+    // 6️⃣ Format giữ nguyên logic cũ
     const formattedData = products.map((p) => {
       const colors = {};
       p.product_images.forEach((img) => {
-        if (!colors[img.color])
+        if (!colors[img.color]) {
           colors[img.color] = { color: img.color, images: [] };
+        }
         colors[img.color].images.push(img.image);
       });
 
@@ -2165,172 +2207,33 @@ const getProductByDanhMucCap2 = async (req, res) => {
     });
 
     return res.status(200).json({
-      message: "Lấy sản phẩm theo danh mục cấp 2 thành công",
+      message: "Lấy sản phẩm theo danh mục thành công",
+      category_level: level,
       total,
       page: validPage,
       totalPages,
       data: formattedData,
     });
   } catch (err) {
-    console.error("Lỗi getProductByDanhMucCap2:", err);
+    console.error("Lỗi getProductByCategory:", err);
     return res.status(500).json({ message: "Lỗi server", error: err.message });
   }
 };
-const getProductByDanhMucCap3 = async (req, res) => {
-  try {
-    const category_id = parseInt(req.params.category_id);
-    const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 20;
 
-    if (!category_id) {
-      return res
-        .status(400)
-        .json({ message: "Danh mục cấp 3 không được để trống" });
-    }
-
-    const category = await model.categories.findByPk(category_id, {
-      include: [{ model: model.categories, as: "parent" }],
-    });
-
-    
-    if (!category || !category.parent || category.parent.parent_id === null) {
-      return res
-        .status(400)
-        .json({ message: "category_id không phải danh mục cấp 3" });
-    }
-
-    const total = await model.products.count({
-      where: {
-        category_id,
-        status: "đang bán",
-      },
-    });
-
-    if (total === 0) {
-      return res.status(200).json({
-        message: "Chưa có sản phẩm trong danh mục này.",
-        total: 0,
-        page: 1,
-        totalPages: 0,
-        data: [],
-      });
-    }
-
-    const totalPages = Math.ceil(total / limit);
-    const validPage = Math.min(page, totalPages || 1);
-    const offset = (validPage - 1) * limit;
-
-    const products = await model.products.findAll({
-      where: {
-        category_id,
-        status: "đang bán",
-      },
-      limit,
-      offset,
-      order: [["name", "ASC"]],
-      attributes: [
-        "product_id",
-        "name",
-        "description",
-        "discount",
-        "price",
-        "spec",
-        "thumbnail",
-        "status",
-        "category_id",
-        "createdAt",
-        "updatedAt",
-      ],
-      include: [
-        {
-          model: model.categories,
-          as: "category",
-          attributes: ["name", "parent_id"],
-          include: [
-            {
-              model: model.categories,
-              as: "parent",
-              attributes: ["name"],
-            },
-          ],
-        },
-        {
-          model: model.product_variants,
-          as: "product_variants",
-          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
-        },
-        {
-          model: model.product_images,
-          as: "product_images",
-          attributes: ["product_image_id", "color", "image"],
-        },
-      ],
-      nest: true,
-    });
-
-  
-    const formattedData = products.map((p) => {
-      const colors = {};
-      p.product_images.forEach((img) => {
-        if (!colors[img.color])
-          colors[img.color] = { color: img.color, images: [] };
-        colors[img.color].images.push(img.image);
-      });
-
-      const product_variants = p.product_variants.map((v) => ({
-        product_variant_id: v.product_variant_id,
-        color: v.color,
-        size: v.size,
-        stock: v.stock,
-        sku: v.sku,
-      }));
-
-      return {
-        product_id: p.product_id,
-        name: p.name,
-        description: p.description,
-        discount: p.discount,
-        price: p.price,
-        spec: p.spec || null,
-        thumbnail: p.thumbnail,
-        status: p.status,
-        category_id: p.category_id,
-        category_name: p.category?.name || null,
-        parent_category_name: p.category?.parent?.name || null,
-        createdAt: formatVNDateTime(p.createdAt),
-        updatedAt: formatVNDateTime(p.updatedAt),
-        product_variants,
-        colors: Object.values(colors),
-      };
-    });
-
-    return res.status(200).json({
-      message: "Lấy sản phẩm theo danh mục cấp 3 thành công",
-      total,
-      page: validPage,
-      totalPages,
-      data: formattedData,
-    });
-  } catch (err) {
-    console.error("Lỗi getProductByDanhMucCap3:", err);
-    return res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-};
 
 export {
   addFullProduct,
   addProductVariant,
   updateFullProduct,
   addSizeToVariant,
-  getProductByDanhMucCap1,
   getAllProducts,
   getActiveProducts,
+  getNewProductsLast2Days,
   getProductDetail,
   getProductByKeyWordAdmin,
   getProductByKeyWordUser,
   updateProductStatus,
   getProductsByStatus,
   deleteProduct,
-  getProductByDanhMucCap2,
-  getProductByDanhMucCap3,
+  getProductByCategory,
 };

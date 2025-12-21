@@ -50,13 +50,12 @@ const addToCart = async (req, res) => {
       return res.status(400).json({ message: "Sản phẩm đã hết hàng" });
     }
 
-    // Lấy giỏ hàng của user, nếu chưa có thì tạo mới
+    
     let cart = await model.carts.findOne({ where: { user_id }, transaction: t });
     if (!cart) {
       cart = await model.carts.create({ user_id }, { transaction: t });
     }
 
-    // Kiểm tra xem sản phẩm đã có trong giỏ chưa
     let cartDetail = await model.cart_details.findOne({
       where: { cart_id: cart.cart_id, product_variant_id },
       transaction: t,
@@ -85,7 +84,7 @@ const addToCart = async (req, res) => {
       });
     }
 
-    // Tạo mới cart_detail
+ 
     if (qty > variant.stock) {
       await t.rollback();
       return res.status(400).json({ message: "Không đủ hàng trong kho" });
