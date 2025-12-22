@@ -2068,7 +2068,7 @@ const getProductByCategory = async (req, res) => {
         .json({ message: "category_id không được để trống" });
     }
 
-    // 1️⃣ Lấy category + parent
+  
     const category = await model.categories.findByPk(category_id, {
       include: [{ model: model.categories, as: "parent" }],
     });
@@ -2077,7 +2077,7 @@ const getProductByCategory = async (req, res) => {
       return res.status(404).json({ message: "Danh mục không tồn tại" });
     }
 
-    // 2️⃣ Xác định cấp
+   
     let level = 3;
     if (category.parent_id === null) {
       level = 1;
@@ -2085,7 +2085,7 @@ const getProductByCategory = async (req, res) => {
       level = 2;
     }
 
-    // 3️⃣ Lấy danh sách category_id cần query
+
     let categoryIds = [category_id];
 
     if (level === 1 || level === 2) {
@@ -2098,7 +2098,7 @@ const getProductByCategory = async (req, res) => {
       categoryIds = [...new Set([...childIds, category_id])];
     }
 
-    // 4️⃣ Đếm tổng sản phẩm
+ 
     const total = await model.products.count({
       where: {
         category_id: { [Op.in]: categoryIds },
@@ -2120,7 +2120,7 @@ const getProductByCategory = async (req, res) => {
     const validPage = Math.min(page, totalPages);
     const offset = (validPage - 1) * limit;
 
-    // 5️⃣ Lấy sản phẩm
+    
     const products = await model.products.findAll({
       where: {
         category_id: { [Op.in]: categoryIds },
@@ -2169,7 +2169,7 @@ const getProductByCategory = async (req, res) => {
       nest: true,
     });
 
-    // 6️⃣ Format giữ nguyên logic cũ
+   
     const formattedData = products.map((p) => {
       const colors = {};
       p.product_images.forEach((img) => {
@@ -2208,7 +2208,12 @@ const getProductByCategory = async (req, res) => {
 
     return res.status(200).json({
       message: "Lấy sản phẩm theo danh mục thành công",
-      category_level: level,
+      category: {
+        category_id: category.category_id,
+        name: category.name,
+        parent_id: category.parent_id,
+        category_level: level,
+      },
       total,
       page: validPage,
       totalPages,
