@@ -4,7 +4,7 @@ import {requireRole} from "../middleware/role.middleware.js";
 
 
 import {
-  getDashboardStatsToday,
+  getDashboardStatsToday,getTopProductsThisMonth,getRevenueByDateRange
   
 } from "../controllers/dashboard.controller.js";
 
@@ -12,5 +12,7 @@ const DashboardRouter = express.Router();
 
 
 DashboardRouter.get("/ThongKeBaoCaoTheoNgay", verifyToken, requireRole("Quản trị viên"), getDashboardStatsToday);
+DashboardRouter.get("/ThongKeSanPhamBanChay", verifyToken, requireRole("Quản trị viên"), getTopProductsThisMonth);
+DashboardRouter.get("/ThongKeTongDoanhThuTheoThang", verifyToken, requireRole("Quản trị viên"), getRevenueByDateRange);
 
 export default DashboardRouter;

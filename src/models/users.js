@@ -1,4 +1,4 @@
-// src/models/users.js
+
 import _sequelize from "sequelize";
 const { Model, DataTypes } = _sequelize;
 

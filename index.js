@@ -12,7 +12,7 @@ import initModels from "./src/models/init-models.js";
 import { connectRedis } from "./src/config/redis.js";
 connectRedis(); 
 
-// === CHỈ LOAD .env.local KHI LOCAL ===
+
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 if (process.env.NODE_ENV !== "production") {
   dotenv.config({ path: path.join(__dirname, ".env.local")   });
@@ -20,7 +20,6 @@ if (process.env.NODE_ENV !== "production") {
 
 const app = express();
 
-// CORS: Chỉ cho phép frontend
 const allowedOrigins = [
   "http://localhost:5173",
   "http://localhost:5174",
@@ -44,7 +43,7 @@ app.use(express.json({ limit: "10mb" }));
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser());
 
-// Gắn sequelize vào req
+
 app.use((req, res, next) => {
   req.sequelize = sequelize;
   req.models = sequelize.models;

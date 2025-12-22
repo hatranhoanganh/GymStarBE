@@ -103,4 +103,106 @@ const getDashboardStatsToday = async (req, res) => {
   }
 };
 
-export { getDashboardStatsToday };
+const getTopProductsThisMonth = async (req, res) => {
+  try {
+    const monthStart = new Date();
+    monthStart.setDate(1);
+    monthStart.setHours(0, 0, 0, 0);
+
+    const monthEnd = new Date(monthStart);
+    monthEnd.setMonth(monthEnd.getMonth() + 1);
+
+    const topProducts = await model.order_details.findAll({
+      attributes: [
+        [fn("SUM", col("order_details.quantity")), "sold"],
+      ],
+      include: [
+        {
+          model: model.orders,
+          as: "order",
+          attributes: [],
+          where: {
+            status: "đã giao",
+            order_date: {
+              [Op.gte]: monthStart,
+              [Op.lt]: monthEnd,
+            },
+          },
+        },
+        {
+          model: model.product_variants,
+          as: "product_variant",
+          attributes: [],
+          include: [
+            {
+              model: model.products,
+              as: "product",
+              attributes: ["product_id", "name"],
+            },
+          ],
+        },
+      ],
+      group: [
+        "product_variant.product.product_id",
+        "product_variant.product.name",
+      ],
+      order: [[fn("SUM", col("order_details.quantity")), "DESC"]],
+      limit: 5,
+      raw: true,
+    });
+
+    return res.status(200).json({
+      message: "Top 5 sản phẩm bán chạy trong tháng",
+      month: monthStart.getMonth() + 1,
+      year: monthStart.getFullYear(),
+      data: topProducts.map((i) => ({
+        product_id: i["product_variant.product.product_id"],
+        product_name: i["product_variant.product.name"],
+        sold: Number(i.sold),
+      })),
+    });
+  } catch (error) {
+    console.error("Lỗi getTopProductsThisMonth:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+const getRevenueByDateRange = async (req, res) => {
+  try {
+    const { from, to } = req.query;
+
+    if (!from || !to) {
+      return res.status(400).json({
+        message: "Thiếu from hoặc to",
+      });
+    }
+
+    const fromDate = new Date(from);
+    fromDate.setHours(0, 0, 0, 0);
+
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59, 999);
+
+    const totalRevenue = await model.orders.sum("total", {
+      where: {
+        status: "đã giao",
+        order_date: {
+          [Op.between]: [fromDate, toDate],
+        },
+      },
+    });
+
+    return res.status(200).json({
+      message: "Lấy tổng doanh thu thành công",
+      from: fromDate,
+      to: toDate,
+      totalRevenue: Number(totalRevenue || 0),
+    });
+  } catch (error) {
+    console.error("Lỗi getRevenueByDateRange:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+
+
+export { getDashboardStatsToday,getTopProductsThisMonth,getRevenueByDateRange };
