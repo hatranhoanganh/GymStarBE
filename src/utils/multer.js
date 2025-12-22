@@ -23,16 +23,27 @@ const storage = multer.diskStorage({
 
 const fileFilter = (req, file, cb) => {
   const allowedMimes = [
+    // IMAGE
     "image/jpeg",
     "image/png",
     "image/jpg",
     "image/webp",
+
+    // VIDEO
+    "video/mp4",
+    "video/webm",
+    "video/ogg",
   ];
 
   if (allowedMimes.includes(file.mimetype)) {
     cb(null, true);
   } else {
-    cb(new Error("Chỉ được upload file ảnh đuôi file là :jpeg, png, jpg, webp"), false);
+    cb(
+      new Error(
+        "Chỉ cho phép upload ảnh (jpg, png, webp, jpeg) hoặc video (mp4, webm, ogg)"
+      ),
+      false
+    );
   }
 };
 
@@ -40,7 +51,7 @@ const fileFilter = (req, file, cb) => {
 const upload = multer({
   storage,
   fileFilter,
-  limits: { fileSize: 5 * 1024 * 1024 },
+  limits: { fileSize: 100 * 1024 * 1024 },
 }).any();
 
 export default upload;

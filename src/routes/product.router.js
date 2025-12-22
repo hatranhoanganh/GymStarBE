@@ -25,7 +25,7 @@ const handleUpload = (req, res, action) => {
   upload(req, res, (err) => {
     if (err) {
       if (err.code === "LIMIT_FILE_SIZE") {
-        return res.status(400).json({ message: "File vượt quá 5MB" });
+        return res.status(400).json({ message: "File vượt quá 100MB" });
       }
       return res.status(400).json({ message: err.message });
     }

@@ -19,12 +19,12 @@ const createReview = async (req, res) => {
   };
 
   const cleanupAllTempFiles = async () => {
-    if (filesToDelete.size === 0) return;
     for (const path of filesToDelete) {
       try {
         await fs.unlink(path);
       } catch (err) {
-        if (err.code !== "ENOENT") console.error("Lỗi xóa file tạm:", path, err.message);
+        if (err.code !== "ENOENT")
+          console.error("Lỗi xóa file tạm:", path, err.message);
       }
     }
     filesToDelete.clear();
@@ -40,16 +40,36 @@ const createReview = async (req, res) => {
     t = await sequelize.transaction();
 
     const { order_detail_id, rating, comment } = req.body;
-    const images = req.files || [];
+    const mediaFiles = req.files || [];
     const user_id = req.user.user_id;
 
-    images.forEach((f) => markForDeletion(f.path));
+    mediaFiles.forEach((f) => markForDeletion(f.path));
 
-    if (!order_detail_id || !rating) return sendError("Thiếu order_detail_id hoặc rating");
-    if (comment && comment.length > 500) return sendError("Comment tối đa 500 ký tự");
-    if (images.length > 5) return sendError("Chỉ được upload tối đa 5 ảnh");
+    // ===== VALIDATE CŨ =====
+    if (!order_detail_id || !rating)
+      return sendError("Thiếu order_detail_id hoặc rating");
 
-   
+    if (comment && comment.length > 500)
+      return sendError("Comment tối đa 500 ký tự");
+
+    // ===== PHÂN LOẠI MEDIA =====
+    const images = mediaFiles.filter((f) =>
+      f.mimetype.startsWith("image")
+    );
+    const videos = mediaFiles.filter((f) =>
+      f.mimetype.startsWith("video")
+    );
+
+    if (images.length > 3)
+      return sendError("Chỉ được upload tối đa 3 ảnh");
+
+    if (videos.length > 1)
+      return sendError("Chỉ được upload tối đa 1 video");
+
+    if (images.length + videos.length > 4)
+      return sendError("Tối đa 3 ảnh và 1 video");
+
+    // ===== CHECK ORDER =====
     const orderDetail = await model.order_details.findOne({
       where: { order_detail_id },
       include: {
@@ -60,64 +80,64 @@ const createReview = async (req, res) => {
       },
     });
 
-    if (!orderDetail) return sendError("Order detail không tồn tại hoặc không thuộc về bạn");
+    if (!orderDetail)
+      return sendError("Order detail không tồn tại hoặc không thuộc về bạn");
 
-    if (!orderDetail.order || orderDetail.order.status !== "đã giao") {
+    if (orderDetail.order.status !== "đã giao")
       return sendError("Chỉ được đánh giá khi đơn hàng đã giao");
-    }
 
-    const existingReview = await model.reviews.findOne({ where: { order_detail_id } });
-    if (existingReview) return sendError("Đơn hàng này đã được đánh giá");
+    const existed = await model.reviews.findOne({
+      where: { order_detail_id },
+    });
+    if (existed)
+      return sendError("Đơn hàng này đã được đánh giá");
 
+    // ===== CREATE REVIEW =====
     const review = await model.reviews.create(
       {
         order_detail_id,
         rating,
         comment: comment || null,
         is_visible: true,
+        
       },
       { transaction: t }
     );
 
-    let uploadedImages = [];
-    if (images.length > 0) {
-      const uploadPromises = images.map((img) =>
-        cloudinary.uploader.upload(img.path, {
-          folder: `reviews/${review.review_id}`,
-          public_id: `img_${Date.now()}`,
-          resource_type: "image",
-        })
+    // ===== UPLOAD MEDIA =====
+    let uploadedMedia = [];
+
+    for (const file of [...images, ...videos]) {
+      const result = await cloudinary.uploader.upload(file.path, {
+        folder: `reviews/${review.review_id}`,
+        resource_type: "auto", // ⭐ QUAN TRỌNG
+      });
+
+      uploadedMedia.push(result.secure_url);
+
+      await model.review_images.create(
+        {
+          review_id: review.review_id,
+          image: result.secure_url,
+        },
+        { transaction: t }
       );
-
-      uploadedImages = await Promise.all(uploadPromises);
-
-      for (const img of uploadedImages) {
-        await model.review_images.create(
-          {
-            review_id: review.review_id,
-            image: img.secure_url,
-          },
-          { transaction: t }
-        );
-      }
     }
 
     await t.commit();
     await cleanupAllTempFiles();
 
-    const formattedReview = {
-      review_id: review.review_id,
-      order_detail_id: review.order_detail_id,
-      rating: review.rating,
-      comment: review.comment,
-      is_visible: review.is_visible,
-      createdAt: formatVNDateTime(review.created_at),
-      images: uploadedImages.map((i) => i.secure_url),
-    };
-
     return res.status(201).json({
       message: "Đánh giá thành công",
-      review: formattedReview,
+      review: {
+        review_id: review.review_id,
+        order_detail_id,
+        rating,
+        comment,
+        is_visible: true,
+        createdAt: formatVNDateTime(review.createdAt),
+        media: uploadedMedia,
+      },
     });
   } catch (error) {
     if (t) await t.rollback();
@@ -126,6 +146,7 @@ const createReview = async (req, res) => {
     return res.status(500).json({ message: "Có lỗi khi tạo review" });
   }
 };
+
 
 
 const replyReview = async (req, res) => {
