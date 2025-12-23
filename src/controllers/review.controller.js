@@ -584,6 +584,139 @@ const getReviewDetailByOrder = async (req, res) => {
   }
 };
 
+const getReviewsByUser = async (req, res) => {
+  try {
+    const user_id = req.user.user_id; 
+    const { page = 1, limit = 10 } = req.query;
+
+    const pageNum = parseInt(page) || 1;
+    const pageSize = parseInt(limit) || 10;
+
+   
+    const total = await model.reviews.count({
+      include: [
+        {
+          model: model.order_details,
+          as: "order_detail",
+          required: true,
+          include: [
+            {
+              model: model.orders,
+              as: "order",
+              required: true,
+              where: { user_id },
+            },
+          ],
+        },
+      ],
+      distinct: true,
+    });
+
+    if (total === 0) {
+      return res.status(200).json({
+        message: "Bạn chưa có đánh giá nào.",
+        total: 0,
+        page: 1,
+        totalPages: 0,
+        data: [],
+      });
+    }
+
+    const totalPages = Math.ceil(total / pageSize);
+    const validPage = Math.min(pageNum, totalPages);
+    const offset = (validPage - 1) * pageSize;
+
+
+    const reviews = await model.reviews.findAll({
+      include: [
+        {
+          model: model.order_details,
+          as: "order_detail",
+          required: true,
+          include: [
+            {
+              model: model.orders,
+              as: "order",
+              required: true,
+              where: { user_id },
+              include: [
+                {
+                  model: model.users,
+                  as: "user",
+                  attributes: ["user_id", "full_name", "email", "gender"],
+                },
+              ],
+            },
+          ],
+        },
+        {
+          model: model.review_images,
+          as: "review_images",
+          attributes: ["image"],
+        },
+        {
+          model: model.review_reply,
+          as: "review_reply",
+          include: [
+            {
+              model: model.users,
+              as: "user",
+              attributes: ["user_id", "full_name", "email"],
+            },
+          ],
+        },
+      ],
+      order: [["review_id", "DESC"]],
+      limit: pageSize,
+      offset,
+      distinct: true,
+    });
+
+   
+    const formattedData = reviews.map((r) => ({
+      review_id: r.review_id,
+      rating: r.rating,
+      comment: r.comment,
+      is_visible: r.is_visible,
+      createdAt: formatVNDateTime(r.createdAt),
+      images: r.review_images.map((img) => img.image),
+      reviewer: r.order_detail?.order?.user
+        ? {
+            user_id: r.order_detail.order.user.user_id,
+            full_name: r.order_detail.order.user.full_name,
+            email: r.order_detail.order.user.email,
+            gender: r.order_detail.order.user.gender,
+          }
+        : null,
+      reply: r.review_reply
+        ? {
+            message: r.review_reply.message,
+            replied_at: formatVNDateTime(r.review_reply.replied_at),
+            replier: r.review_reply.user
+              ? {
+                  user_id: r.review_reply.user.user_id,
+                  full_name: r.review_reply.user.full_name,
+                  email: r.review_reply.user.email,
+                }
+              : null,
+          }
+        : null,
+    }));
+
+    return res.status(200).json({
+      message: "Lấy danh sách đánh giá của bạn thành công",
+      total,
+      page: validPage,
+      totalPages,
+      data: formattedData,
+    });
+  } catch (error) {
+    console.error("Lỗi getMyReviews:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
+
+
 export {
   createReview,
   replyReview,
@@ -591,5 +724,6 @@ export {
 
   toggleReviewVisibility,
   getAllReviews,
-  getReviewDetailByOrder
+  getReviewDetailByOrder,
+  getReviewsByUser,
 };

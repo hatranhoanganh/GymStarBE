@@ -39,7 +39,6 @@ const placeDirectOrder = async (req, res) => {
     if (finalQuantity > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
 
- 
     const address = address_id
       ? await model.user_addresses.findOne({
           where: { address_id, user_id },
@@ -53,7 +52,6 @@ const placeDirectOrder = async (req, res) => {
     if (!address)
       return res.status(400).json({ message: "Địa chỉ không tồn tại" });
 
-   
     const variant = await model.product_variants.findOne({
       where: { product_variant_id },
       transaction: t,
@@ -68,7 +66,6 @@ const placeDirectOrder = async (req, res) => {
         .status(400)
         .json({ message: "Hết hàng hoặc không đủ số lượng" });
 
-    
     const product = await model.products.findByPk(variant.product_id, {
       transaction: t,
     });
@@ -76,11 +73,8 @@ const placeDirectOrder = async (req, res) => {
     if (!product)
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
 
-   
     const originalPrice = Number(product.price);
-    const discountPercent = product.discount
-      ? parseFloat(product.discount)
-      : 0;
+    const discountPercent = product.discount ? parseFloat(product.discount) : 0;
 
     let finalPrice;
     if (discountPercent > 0) {
@@ -91,7 +85,6 @@ const placeDirectOrder = async (req, res) => {
     }
 
     const totalAmount = finalPrice * finalQuantity;
-
 
     const newOrder = await model.orders.create(
       {
@@ -119,14 +112,12 @@ const placeDirectOrder = async (req, res) => {
       { transaction: t }
     );
 
- 
     await model.product_variants.decrement("stock", {
       by: finalQuantity,
       where: { product_variant_id },
       transaction: t,
     });
 
-  
     const payment = await model.payments.create(
       {
         order_id: newOrder.order_id,
@@ -140,7 +131,6 @@ const placeDirectOrder = async (req, res) => {
 
     await t.commit();
 
-    
     if (method === "MOMO") {
       try {
         const momoResult = await prepareMomoPayment(newOrder.order_id);
@@ -176,8 +166,6 @@ const placeDirectOrder = async (req, res) => {
   }
 };
 
-
-
 const placeCartOrder = async (req, res) => {
   let t;
   try {
@@ -186,21 +174,35 @@ const placeCartOrder = async (req, res) => {
     const user_id = req.user.user_id;
     const { cart_detail_ids, address_id, note, method } = req.body;
 
-    if (!cart_detail_ids || !Array.isArray(cart_detail_ids) || cart_detail_ids.length === 0) {
+    if (
+      !cart_detail_ids ||
+      !Array.isArray(cart_detail_ids) ||
+      cart_detail_ids.length === 0
+    ) {
       return res.status(400).json({ message: "Vui lòng chọn sản phẩm" });
     }
 
     if (!method) {
-      return res.status(400).json({ message: "Vui lòng chọn phương thức thanh toán" });
+      return res
+        .status(400)
+        .json({ message: "Vui lòng chọn phương thức thanh toán" });
     }
 
     if (!["COD", "MOMO"].includes(method)) {
-      return res.status(400).json({ message: "Phương thức thanh toán không hỗ trợ" });
+      return res
+        .status(400)
+        .json({ message: "Phương thức thanh toán không hỗ trợ" });
     }
 
     let address = address_id
-      ? await model.user_addresses.findOne({ where: { address_id, user_id }, transaction: t })
-      : await model.user_addresses.findOne({ where: { user_id, is_default: true }, transaction: t });
+      ? await model.user_addresses.findOne({
+          where: { address_id, user_id },
+          transaction: t,
+        })
+      : await model.user_addresses.findOne({
+          where: { user_id, is_default: true },
+          transaction: t,
+        });
 
     if (!address) {
       await t.rollback();
@@ -219,7 +221,14 @@ const placeCartOrder = async (req, res) => {
         {
           model: model.product_variants,
           as: "product_variant",
-          attributes: ["product_variant_id", "color", "size", "sku", "stock", "product_id"],
+          attributes: [
+            "product_variant_id",
+            "color",
+            "size",
+            "sku",
+            "stock",
+            "product_id",
+          ],
           lock: { level: t.LOCK.UPDATE, of: model.product_variants }, // <-- fix FOR UPDATE
           include: [
             {
@@ -235,7 +244,9 @@ const placeCartOrder = async (req, res) => {
 
     if (cartItems.length === 0) {
       await t.rollback();
-      return res.status(404).json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
+      return res
+        .status(404)
+        .json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
     }
 
     let total = 0;
@@ -248,15 +259,21 @@ const placeCartOrder = async (req, res) => {
       if (!variant || variant.stock < item.quantity) {
         await t.rollback();
         return res.status(400).json({
-          message: `Sản phẩm "${product.name}" (${variant.color || ""} ${variant.size || ""}) không đủ hàng`,
+          message: `Sản phẩm "${product.name}" (${variant.color || ""} ${
+            variant.size || ""
+          }) không đủ hàng`,
         });
       }
 
       const originalPrice = Number(product.price);
-      const discountPercent = product.discount ? parseFloat(product.discount) : 0;
-      let finalPrice = discountPercent > 0
-        ? Math.round((originalPrice * (1 - discountPercent / 100)) / 1000) * 1000
-        : originalPrice;
+      const discountPercent = product.discount
+        ? parseFloat(product.discount)
+        : 0;
+      let finalPrice =
+        discountPercent > 0
+          ? Math.round((originalPrice * (1 - discountPercent / 100)) / 1000) *
+            1000
+          : originalPrice;
 
       total += finalPrice * item.quantity;
 
@@ -284,7 +301,7 @@ const placeCartOrder = async (req, res) => {
     );
 
     await model.order_details.bulkCreate(
-      orderDetailsInput.map(d => ({ ...d, order_id: order.order_id })),
+      orderDetailsInput.map((d) => ({ ...d, order_id: order.order_id })),
       { transaction: t }
     );
 
@@ -302,13 +319,21 @@ const placeCartOrder = async (req, res) => {
     });
 
     await model.payments.create(
-      { order_id: order.order_id, method, total, status: "đang chờ", payment_date: null },
+      {
+        order_id: order.order_id,
+        method,
+        total,
+        status: "đang chờ",
+        payment_date: null,
+      },
       { transaction: t }
     );
 
     await t.commit();
 
-    const payment = await model.payments.findOne({ where: { order_id: order.order_id } });
+    const payment = await model.payments.findOne({
+      where: { order_id: order.order_id },
+    });
 
     if (method === "COD") {
       return res.json({
@@ -343,19 +368,21 @@ const placeCartOrder = async (req, res) => {
         await cancelOrderAndRestoreStock(order.order_id);
 
         return res.status(500).json({
-          message: "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hàng tồn kho đã được hoàn lại.",
+          message:
+            "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hàng tồn kho đã được hoàn lại.",
         });
       }
     }
 
-    return res.status(400).json({ message: "Phương thức thanh toán không hỗ trợ" });
+    return res
+      .status(400)
+      .json({ message: "Phương thức thanh toán không hỗ trợ" });
   } catch (error) {
     if (t && !t.finished) await t.rollback();
     console.error("Lỗi placeCartOrder:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
 
 const getOrdersByStatus = async (req, res) => {
   try {
@@ -1032,8 +1059,11 @@ const updateOrderStatus = async (req, res) => {
 
     if (nextStatus === "đã giao") {
       order.received_date = new Date();
-      order.payment.status = "thành công";
-      order.payment.payment_date = new Date();
+
+      if (order.payment.method === "COD") {
+        order.payment.status = "thành công";
+        order.payment.payment_date = new Date();
+      }
     }
 
     if (nextStatus === "giao thất bại" || nextStatus === "đổi hàng") {
@@ -1092,13 +1122,7 @@ const reorderCart = async (req, res) => {
         {
           model: model.product_variants,
           as: "product_variant",
-          attributes: [
-            "product_variant_id",
-            "stock",
-            "color",
-            "size",
-            "sku",
-          ],
+          attributes: ["product_variant_id", "stock", "color", "size", "sku"],
           include: [
             {
               model: model.products,
@@ -1119,12 +1143,7 @@ const reorderCart = async (req, res) => {
       });
     }
 
-    const allowedStatuses = [
-      "đã giao",
-      "giao thất bại",
-      "đã hủy",
-      "đổi hàng",
-    ];
+    const allowedStatuses = ["đã giao", "giao thất bại", "đã hủy", "đổi hàng"];
 
     if (!allowedStatuses.includes(orderDetail.order.status)) {
       return res.status(400).json({
@@ -1147,13 +1166,11 @@ const reorderCart = async (req, res) => {
       });
     }
 
-  
     let cart = await model.carts.findOne({ where: { user_id } });
     if (!cart) {
       cart = await model.carts.create({ user_id });
     }
 
-   
     const variantId = variant.product_variant_id;
 
     let cartDetail = await model.cart_details.findOne({
@@ -1188,7 +1205,6 @@ const reorderCart = async (req, res) => {
       });
     }
 
-   
     return res.status(200).json({
       message: "Mua lại sản phẩm thành công",
       data: {
@@ -1205,8 +1221,6 @@ const reorderCart = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
 
 export {
   placeDirectOrder,

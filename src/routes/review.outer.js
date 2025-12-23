@@ -8,6 +8,7 @@ import { createReview,
   toggleReviewVisibility,
   getAllReviews,
 getReviewDetailByOrder,
+getReviewsByUser,
  } from "../controllers/review.controller.js";
 
 const ReviewRouter = express.Router();
@@ -35,6 +36,7 @@ ReviewRouter.put("/CapNhatTrangThaiDanhGia/:review_id", verifyToken,requireRole(
 ReviewRouter.get("/LayDanhSachDanhGiaCuaSanPham/:product_id",  getReviewsByProduct);
 ReviewRouter.get("/LayDanhSachTatCaDanhGia",verifyToken,requireRole("Quản trị viên","Quản lý phản hồi"),  getAllReviews);
 ReviewRouter.get("/LayDanhGiaCuaChiTietDonHang/:order_detail_id",verifyToken,  getReviewDetailByOrder);
+ReviewRouter.get("/LayDanhGiaCuaNguoiDung",verifyToken,  getReviewsByUser);
 
 
 

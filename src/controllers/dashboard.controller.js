@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 import { formatVNDateTime } from "../utils/dateFormat.js";
-import { Op, fn, col } from "sequelize";
+import { Op, fn,literal, col } from "sequelize";
 
 dotenv.config();
 const model = initModels(sequelize);
@@ -115,6 +115,13 @@ const getTopProductsThisMonth = async (req, res) => {
     const topProducts = await model.order_details.findAll({
       attributes: [
         [fn("SUM", col("order_details.quantity")), "sold"],
+        [
+          fn(
+            "SUM",
+            literal("order_details.quantity * order_details.price")
+          ),
+          "revenue",
+        ],
       ],
       include: [
         {
@@ -138,6 +145,13 @@ const getTopProductsThisMonth = async (req, res) => {
               model: model.products,
               as: "product",
               attributes: ["product_id", "name"],
+              include: [
+                {
+                  model: model.categories,
+                  as: "category",
+                  attributes: ["name"], 
+                },
+              ],
             },
           ],
         },
@@ -145,6 +159,8 @@ const getTopProductsThisMonth = async (req, res) => {
       group: [
         "product_variant.product.product_id",
         "product_variant.product.name",
+        "product_variant.product.category.category_id", 
+        "product_variant.product.category.name",
       ],
       order: [[fn("SUM", col("order_details.quantity")), "DESC"]],
       limit: 5,
@@ -155,10 +171,11 @@ const getTopProductsThisMonth = async (req, res) => {
       message: "Top 5 sản phẩm bán chạy trong tháng",
       month: monthStart.getMonth() + 1,
       year: monthStart.getFullYear(),
-      data: topProducts.map((i) => ({
-        product_id: i["product_variant.product.product_id"],
-        product_name: i["product_variant.product.name"],
+      topProducts: topProducts.map((i) => ({
+        name: i["product_variant.product.name"],
+        category_name: i["product_variant.product.category.name"],
         sold: Number(i.sold),
+        revenue: Number(i.revenue),
       })),
     });
   } catch (error) {
@@ -166,14 +183,13 @@ const getTopProductsThisMonth = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 const getRevenueByDateRange = async (req, res) => {
   try {
     const { from, to } = req.query;
 
     if (!from || !to) {
-      return res.status(400).json({
-        message: "Thiếu from hoặc to",
-      });
+      return res.status(400).json({ message: "Thiếu from hoặc to" });
     }
 
     const fromDate = new Date(from);
@@ -182,20 +198,50 @@ const getRevenueByDateRange = async (req, res) => {
     const toDate = new Date(to);
     toDate.setHours(23, 59, 59, 999);
 
-    const totalRevenue = await model.orders.sum("total", {
+    const revenueDataRaw = await model.orders.findAll({
+      attributes: [
+        [
+          literal(
+            `DATE("orders"."order_date" AT TIME ZONE 'Asia/Ho_Chi_Minh')`
+          ),
+          "date",
+        ],
+        [fn("SUM", col("total")), "revenue"],
+        [fn("COUNT", col("order_id")), "orders"],
+      ],
       where: {
         status: "đã giao",
         order_date: {
           [Op.between]: [fromDate, toDate],
         },
       },
+      group: [
+        literal(
+          `DATE("orders"."order_date" AT TIME ZONE 'Asia/Ho_Chi_Minh')`
+        ),
+      ],
+      order: [
+        [
+          literal(
+            `DATE("orders"."order_date" AT TIME ZONE 'Asia/Ho_Chi_Minh')`
+          ),
+          "ASC",
+        ],
+      ],
+      raw: true,
     });
 
+    const revenueData = revenueDataRaw.map((item) => ({
+      date: item.date, // yyyy-mm-dd
+      revenue: Number(item.revenue),
+      orders: Number(item.orders),
+    }));
+
     return res.status(200).json({
-      message: "Lấy tổng doanh thu thành công",
+      message: "Lấy doanh thu theo ngày thành công",
       from: fromDate,
       to: toDate,
-      totalRevenue: Number(totalRevenue || 0),
+      revenueData,
     });
   } catch (error) {
     console.error("Lỗi getRevenueByDateRange:", error);

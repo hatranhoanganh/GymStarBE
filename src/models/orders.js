@@ -54,7 +54,6 @@ export default class orders extends Model {
         received_date: {
           type: DataTypes.DATE,
           allowNull: true,
-          defaultValue: Sequelize.Sequelize.literal("CURRENT_TIMESTAMP"),
         },
         receiver_name: {
           type: DataTypes.STRING(100),

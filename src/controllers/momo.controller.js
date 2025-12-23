@@ -231,15 +231,15 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   try {
     t = await sequelize.transaction();
 
-   
+    // 1. Lấy chi tiết đơn (lock)
     const details = await model.order_details.findAll({
       where: { order_id },
       attributes: ["product_variant_id", "quantity"],
       transaction: t,
-      lock: t.LOCK.UPDATE, 
+      lock: t.LOCK.UPDATE,
     });
 
-    
+    // 2. Hoàn stock
     for (const item of details) {
       await model.product_variants.increment("stock", {
         by: item.quantity,
@@ -248,46 +248,70 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       });
     }
 
-  
+    // 3. Update payment → thất bại (chỉ khi chưa thành công)
     await model.payments.update(
-      { status: "thất bại", payment_date: null },
-      { where: { order_id }, transaction: t }
+      {
+        status: "thất bại",
+      },
+      {
+        where: {
+          order_id,
+          status: { [Op.ne]: "thành công" },
+        },
+        transaction: t,
+      }
     );
 
-  
+    // 4. Update order → đã hủy
     await model.orders.update(
       { status: "đã hủy" },
       { where: { order_id }, transaction: t }
     );
 
     await t.commit();
-    console.log(`Đơn #${order_id} đã thanh toán thất bại + hoàn stock thành công (dữ liệu giữ nguyên)`);
+    console.log(`Đơn #${order_id} → đã hủy + hoàn stock (KHÔNG xóa dữ liệu)`);
   } catch (err) {
     if (t && !t.finished) await t.rollback();
-    console.error(`Lỗi khi hủy đơn #${order_id}:`, err);
+    console.error(`Lỗi hủy đơn #${order_id}:`, err);
   }
 };
+
 
 
 export const retryPayment = async (req, res) => {
   try {
-    const { order_id } = req.query;
-    const order = await model.orders.findOne({ where: { order_id } });
-    if (!order) return res.status(404).json({ message: "Không tìm thấy đơn" });
+    const { order_id } = req.body; 
 
-    const payment = await model.payments.findOne({
-      where: { order_id, method: "MOMO" },
+    if (!order_id) {
+      return res.status(400).json({ message: "Thiếu order_id" });
+    }
+
+    const order = await model.orders.findOne({
+      where: { order_id },
     });
-    if (payment?.status === "thành công") {
-      return res.status(400).json({ message: "Đơn đã thanh toán thành công" });
+
+    if (!order) {
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+    }
+
+
+    const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
+    if (new Date() > expiredAt) {
+      return res.status(400).json({ message: "Đơn hàng đã hết hạn thanh toán" });
     }
 
     const result = await prepareMomoPayment(order_id);
-    return res.json({ message: "Tạo link mới thành công", data: result });
+
+    return res.json({
+      message: "Tạo link MoMo mới thành công",
+      payUrl: result.payUrl,
+    });
   } catch (error) {
-    return res.status(500).json({ message: "Lỗi", error: error.message });
+    return res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
+
+
 
 export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
