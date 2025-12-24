@@ -556,6 +556,12 @@ const getOrderDetail = async (req, res) => {
                 },
               ],
             },
+            {
+              model: model.reviews,
+              as: "review",
+              attributes: ["review_id"],
+              required: false, 
+            },
           ],
         },
       ],
@@ -608,7 +614,6 @@ const getOrderDetail = async (req, res) => {
             },
           ]
         : [],
-
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
@@ -616,6 +621,10 @@ const getOrderDetail = async (req, res) => {
           item.original_price || item.product_variant.product.price
         ),
         price: Number(item.price),
+
+      
+        is_review: !!item.review,
+
         product: {
           product_id: item.product_variant.product.product_id,
           name: item.product_variant.product.name,
@@ -641,6 +650,7 @@ const getOrderDetail = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+
 
 const cancelOrder = async (req, res) => {
   const t = await sequelize.transaction();

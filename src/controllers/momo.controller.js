@@ -52,79 +52,8 @@ const createMoMoSignature = (params) => {
     .join("&");
 };
 
-export const updatePayment = async (req, res) => {
-  console.log("MoMo IPN nhận được:", req.body);
-  try {
-    const {
-      partnerCode,
-      orderId,
-      requestId,
-      amount,
-      orderInfo,
-      orderType,
-      transId,
-      resultCode,
-      message,
-      payType,
-      responseTime,
-      extraData,
-      signature,
-    } = req.body;
 
-  
-    const rawSignature = [
-      `accessKey=${accessKey}`,
-      `amount=${amount}`,
-      `extraData=${extraData || ""}`,
-      `message=${message}`,
-      `orderId=${orderId}`,
-      `orderInfo=${orderInfo}`,
-      `orderType=${orderType}`,
-      `partnerCode=${partnerCode}`,
-      `payType=${payType || ""}`,
-      `requestId=${requestId}`,
-      `responseTime=${responseTime}`,
-      `resultCode=${resultCode}`,
-      `transId=${transId || ""}`,
-    ].join("&");
 
-    const checkSig = createHmac("sha256", secretKey)
-      .update(rawSignature)
-      .digest("hex");
-    if (checkSig !== signature) {
-      console.log("CHỮ KÝ SAI → BỎ QUA");
-      return res.status(400).json({ message: "Invalid signature" });
-    }
-
-    const order_id = JSON.parse(extraData || "{}").order_id;
-    if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
-
-    const payment = await model.payments.findOne({
-      where: { order_id, method: "MOMO" },
-    });
-    if (!payment) return res.status(404).json({ message: "Không tìm thấy đơn" });
-
-    if (payment.status === "thành công") return res.json({ resultCode: 0, message: "Already processed" });
-
-    if (resultCode == 0) {
-      await payment.update({
-        status: "thành công",
-        payment_date: new Date(Number(responseTime)),
-        trans_id: transId?.toString(),
-      });
-    } else {
-      await payment.update({
-        status: "thất bại",
-        payment_date: null,
-      });
-    }
-
-    return res.json({ resultCode: 0, message: "OK" });
-  } catch (error) {
-    console.error("Lỗi IPN MoMo:", error);
-    return res.status(500).json({ message: "Server error" });
-  }
-};
 
 export const handlePaymentRequest = async (req, res) => {
   const t = await sequelize.transaction();
@@ -132,50 +61,44 @@ export const handlePaymentRequest = async (req, res) => {
     const { order_id } = req.body;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    
-    let order = await model.orders.findOne({ where: { order_id } });
-    if (!order)
-      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+    const order = await model.orders.findOne({ where: { order_id } });
+    if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
-
-    const existingPayment = await model.payments.findOne({
-      where: { order_id, method: "MOMO" },
-    });
-    if (existingPayment?.status === "thành công") {
-      return res
-        .status(400)
-        .json({ message: "Đơn hàng đã thanh toán thành công!" });
+   
+    const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
+    if (new Date() > expiredAt) {
+      return res.status(400).json({
+        message: "Đơn hàng đã hết hạn thanh toán",
+        expired: true,
+      });
     }
-
-  
-    if (!existingPayment) {
-      await model.payments.create(
-        {
-          order_id,
-          method: "MOMO",
-          amount: order.total,
-          total: order.total,
-          status: "đang chờ",
-        },
-        { transaction: t }
-      );
-    } else {
-      await existingPayment.update({ status: "đang chờ" }, { transaction: t });
-    }
-
 
     const amount = Math.round(Number(order.total)).toString();
-    const momoOrderId = `${order_id}_${Date.now()}`;
-    const requestId = momoOrderId;
+    const momo_order_id = `${order_id}_${Date.now()}`;
+    const requestId = momo_order_id;
     const orderInfo = `Thanh toán đơn hàng #${order_id}`;
     const extraData = JSON.stringify({ order_id });
 
+   
+    await model.payments.create(
+      {
+        order_id,
+        momo_order_id,
+        method: "MOMO",
+        amount: order.total,
+        total: order.total,
+        status: "đang chờ",
+      },
+      { transaction: t }
+    );
+
+   
     const signData = {
       accessKey,
       amount,
       extraData,
       ipnUrl,
-      orderId: momoOrderId,
+      orderId: momo_order_id,
       orderInfo,
       partnerCode,
       redirectUrl: `http://localhost:5173/dat-hang-thanh-cong/${order_id}`,
@@ -191,7 +114,7 @@ export const handlePaymentRequest = async (req, res) => {
       partnerCode: "MOMO",
       requestId,
       amount,
-      orderId: momoOrderId,
+      orderId: momo_order_id,
       orderInfo,
       redirectUrl: `http://localhost:5173/dat-hang-thanh-cong/${order_id}`,
       ipnUrl,
@@ -208,9 +131,6 @@ export const handlePaymentRequest = async (req, res) => {
 
     await t.commit();
 
-
-   
-
     return res.json({
       message: "Tạo link MoMo thành công",
       payUrl: response.data.payUrl,
@@ -225,6 +145,7 @@ export const handlePaymentRequest = async (req, res) => {
     });
   }
 };
+
 
 export const cancelOrderAndRestoreStock = async (order_id) => {
   let t;
@@ -277,22 +198,94 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
 };
 
 
+export const updatePayment = async (req, res) => {
+  console.log("MoMo IPN nhận được:", req.body);
+  try {
+    const {
+      partnerCode,
+      orderId,
+      requestId,
+      amount,
+      orderInfo,
+      orderType,
+      transId,
+      resultCode,
+      message,
+      payType,
+      responseTime,
+      extraData,
+      signature,
+    } = req.body;
+
+ 
+    const rawSignature = [
+      `accessKey=${accessKey}`,
+      `amount=${amount}`,
+      `extraData=${extraData || ""}`,
+      `message=${message}`,
+      `orderId=${orderId}`,
+      `orderInfo=${orderInfo}`,
+      `orderType=${orderType}`,
+      `partnerCode=${partnerCode}`,
+      `payType=${payType || ""}`,
+      `requestId=${requestId}`,
+      `responseTime=${responseTime}`,
+      `resultCode=${resultCode}`,
+      `transId=${transId || ""}`,
+    ].join("&");
+
+    const checkSig = createHmac("sha256", secretKey)
+      .update(rawSignature)
+      .digest("hex");
+
+    if (checkSig !== signature) {
+      console.log("CHỮ KÝ SAI → BỎ QUA");
+      return res.status(400).json({ message: "Invalid signature" });
+    }
+
+    const order_id = JSON.parse(extraData || "{}").order_id;
+    if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
+
+    
+    const payments = await model.payments.findAll({
+      where: { order_id, method: "MOMO" },
+      order: [["payment_id", "DESC"]],
+    });
+
+    const payment = payments.find(p => p.status !== "thành công");
+    if (!payment) return res.status(404).json({ message: "Không tìm thấy payment chưa thành công" });
+
+    if (resultCode == 0) {
+      await payment.update({
+        status: "thành công",
+        payment_date: new Date(Number(responseTime)), 
+        trans_id: transId?.toString(),
+      });
+    } else {
+      await payment.update({
+        status: "thất bại",
+        payment_date: null, 
+      });
+    }
+
+    return res.json({ resultCode: 0, message: "OK" });
+  } catch (error) {
+    console.error("Lỗi IPN MoMo:", error);
+    return res.status(500).json({ message: "Server error" });
+  }
+};
+
 
 export const retryPayment = async (req, res) => {
   try {
-    const { order_id } = req.body; 
+    const { order_id } = req.body;
+    if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    if (!order_id) {
-      return res.status(400).json({ message: "Thiếu order_id" });
-    }
+    const order = await model.orders.findOne({ where: { order_id } });
+    if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
-    const order = await model.orders.findOne({
-      where: { order_id },
-    });
-
-    if (!order) {
-      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
-    }
+    if (order.status === "đã hủy")
+      return res.status(400).json({ message: "Đơn hàng đã bị hủy" });
 
 
     const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
@@ -300,16 +293,35 @@ export const retryPayment = async (req, res) => {
       return res.status(400).json({ message: "Đơn hàng đã hết hạn thanh toán" });
     }
 
-    const result = await prepareMomoPayment(order_id);
+    
+    const newPayment = await model.payments.create({
+      order_id,
+      method: "MOMO",
+      amount: order.total,
+      total: order.total,
+      status: "đang chờ",
+      payment_date: null, 
+    });
+
+  
+    const momoData = await prepareMomoPayment(order_id);
 
     return res.json({
-      message: "Tạo link MoMo mới thành công",
-      payUrl: result.payUrl,
+      message: "Tạo link thanh toán lại thành công",
+      payUrl: momoData.payUrl,
+      order_id,
     });
   } catch (error) {
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    console.error("retryPayment error:", error);
+    return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
+
+
+
+
 
 
 

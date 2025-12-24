@@ -586,7 +586,7 @@ const getReviewDetailByOrder = async (req, res) => {
 
 const getReviewsByUser = async (req, res) => {
   try {
-    const user_id = req.user.user_id; 
+    const user_id = req.user.user_id;
     const { page = 1, limit = 10 } = req.query;
 
     const pageNum = parseInt(page) || 1;
@@ -626,7 +626,7 @@ const getReviewsByUser = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
-
+ 
     const reviews = await model.reviews.findAll({
       include: [
         {
@@ -639,11 +639,26 @@ const getReviewsByUser = async (req, res) => {
               as: "order",
               required: true,
               where: { user_id },
+            },
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              attributes: [
+                "product_variant_id",
+                "color",
+                "size",
+                "sku",
+              ],
               include: [
                 {
-                  model: model.users,
-                  as: "user",
-                  attributes: ["user_id", "full_name", "email", "gender"],
+                  model: model.products,
+                  as: "product",
+                  attributes: [
+                    "product_id",
+                    "name",
+                    "thumbnail",
+                    "price",
+                  ],
                 },
               ],
             },
@@ -673,33 +688,45 @@ const getReviewsByUser = async (req, res) => {
     });
 
    
-    const formattedData = reviews.map((r) => ({
+    const data = reviews.map((r) => ({
       review_id: r.review_id,
       rating: r.rating,
       comment: r.comment,
       is_visible: r.is_visible,
       createdAt: formatVNDateTime(r.createdAt),
       images: r.review_images.map((img) => img.image),
-      reviewer: r.order_detail?.order?.user
+
+      product: r.order_detail?.product_variant?.product
         ? {
-            user_id: r.order_detail.order.user.user_id,
-            full_name: r.order_detail.order.user.full_name,
-            email: r.order_detail.order.user.email,
-            gender: r.order_detail.order.user.gender,
-          }
+          product_id:
+            r.order_detail.product_variant.product.product_id,
+          product_name:
+            r.order_detail.product_variant.product.name,
+          thumbnail:
+            r.order_detail.product_variant.product.thumbnail,
+          price:
+            r.order_detail.product_variant.product.price,
+        }
         : null,
+
+      variant: r.order_detail?.product_variant
+        ? {
+          product_variant_id:
+            r.order_detail.product_variant.product_variant_id,
+          color: r.order_detail.product_variant.color,
+          size: r.order_detail.product_variant.size,
+          sku: r.order_detail.product_variant.sku,
+        }
+        : null,
+
       reply: r.review_reply
         ? {
-            message: r.review_reply.message,
-            replied_at: formatVNDateTime(r.review_reply.replied_at),
-            replier: r.review_reply.user
-              ? {
-                  user_id: r.review_reply.user.user_id,
-                  full_name: r.review_reply.user.full_name,
-                  email: r.review_reply.user.email,
-                }
-              : null,
-          }
+          message: r.review_reply.message,
+          replied_at: formatVNDateTime(
+            r.review_reply.replied_at
+          ),
+          replier: r.review_reply.user,
+        }
         : null,
     }));
 
@@ -708,10 +735,10 @@ const getReviewsByUser = async (req, res) => {
       total,
       page: validPage,
       totalPages,
-      data: formattedData,
+      data,
     });
   } catch (error) {
-    console.error("Lỗi getMyReviews:", error);
+    console.error("getReviewsByUser error:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
