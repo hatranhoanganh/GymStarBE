@@ -9,7 +9,7 @@ const model = initModels(sequelize);
 
 const createPromotion = async (req, res) => {
   try {
-    // --- trim toàn bộ string trong body ---
+
     const body = {};
     for (const key in req.body) {
       if (typeof req.body[key] === "string") {
@@ -31,7 +31,7 @@ const createPromotion = async (req, res) => {
       usage_per_user,
     } = body;
 
-    // --- validate code ---
+ 
     if (!code)
       return res
         .status(400)
@@ -45,7 +45,7 @@ const createPromotion = async (req, res) => {
       });
     }
 
-    // --- validate description ---
+    
     if (!description)
       return res
         .status(400)
@@ -61,14 +61,14 @@ const createPromotion = async (req, res) => {
       });
     }
 
-    // --- validate discount_type ---
+  
     if (!discount_type || !["fixed", "percent"].includes(discount_type)) {
       return res
         .status(400)
         .json({ message: "discount_type phải là 'fixed' hoặc 'percent'" });
     }
 
-    // --- validate value ---
+  
     value = Number(value);
     if (isNaN(value))
       return res.status(400).json({ message: "value phải là số" });
@@ -111,7 +111,7 @@ const createPromotion = async (req, res) => {
         .json({ message: "start_date hoặc end_date không hợp lệ" });
     }
 
-    // set giờ
+   
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
 
@@ -132,7 +132,7 @@ const createPromotion = async (req, res) => {
       });
     }
 
-    // usage_per_user: từ 1 -> 30
+    
     usage_per_user = Number(usage_per_user);
     if (isNaN(usage_per_user) || usage_per_user < 1 || usage_per_user > 30) {
       return res.status(400).json({
@@ -140,12 +140,12 @@ const createPromotion = async (req, res) => {
       });
     }
 
-    // --- kiểm tra code trùng ---
+  
     const existing = await model.promotions.findOne({ where: { code } });
     if (existing)
       return res.status(400).json({ message: "Code khuyến mãi đã tồn tại" });
 
-    // --- tạo promotion ---
+ 
     const newPromotion = await model.promotions.create({
       code,
       value,
@@ -156,7 +156,7 @@ const createPromotion = async (req, res) => {
       start_date: start,
       end_date: end,
       usage_per_user,
-      status: "active", // mặc định active
+      status: "active", 
     });
 
     return res.status(201).json({
@@ -172,9 +172,7 @@ const updatePromotion = async (req, res) => {
   try {
     const { promotion_id } = req.params;
 
-    /* ===============================
-       TRIM STRING
-    =============================== */
+    
     const body = {};
     for (const key in req.body) {
       body[key] =
@@ -183,16 +181,11 @@ const updatePromotion = async (req, res) => {
           : req.body[key];
     }
 
-    /* ===============================
-       FIND PROMOTION
-    =============================== */
+
     const promotion = await model.promotions.findByPk(promotion_id);
     if (!promotion)
       return res.status(404).json({ message: "Khuyến mãi không tồn tại" });
 
-    /* ===============================
-       ❌ BLOCK FIELD UPDATE
-    =============================== */
     const blockedFields = [
       "discount_type",
       "value",
@@ -209,16 +202,12 @@ const updatePromotion = async (req, res) => {
       }
     }
 
-    /* ===============================
-       MERGE ALLOW FIELD
-    =============================== */
+    
     const code = body.code ?? promotion.code;
     const description = body.description ?? promotion.description;
     const usage_per_user = body.usage_per_user ?? promotion.usage_per_user;
 
-    /* ===============================
-       VALIDATE CODE
-    =============================== */
+    
     if (!code)
       return res.status(400).json({ message: "Code không được để trống" });
 
@@ -240,9 +229,7 @@ const updatePromotion = async (req, res) => {
     if (existing)
       return res.status(400).json({ message: "Code khuyến mãi đã tồn tại" });
 
-    /* ===============================
-       VALIDATE DESCRIPTION
-    =============================== */
+   
     if (!description)
       return res
         .status(400)
@@ -253,18 +240,14 @@ const updatePromotion = async (req, res) => {
         message: "Description phải từ 5 đến 100 ký tự",
       });
 
-    /* ===============================
-       VALIDATE USAGE_PER_USER
-    =============================== */
+
     const usage = Number(usage_per_user);
     if (isNaN(usage) || usage < 1 || usage > 30)
       return res.status(400).json({
         message: "usage_per_user phải từ 1 đến 30",
       });
 
-    /* ===============================
-       VALIDATE DATE
-    =============================== */
+ 
     let start = promotion.start_date;
     let end = promotion.end_date;
 
@@ -293,9 +276,6 @@ const updatePromotion = async (req, res) => {
         .status(400)
         .json({ message: "start_date phải nhỏ hơn end_date" });
 
-    /* ===============================
-       UPDATE
-    =============================== */
     await promotion.update({
       code,
       description,
@@ -347,9 +327,7 @@ const togglePromotionStatus = async (req, res) => {
   try {
     const { promotion_id } = req.params;
 
-    /* ===============================
-       FIND PROMOTION
-    =============================== */
+   
     const promotion = await model.promotions.findByPk(promotion_id);
 
     if (!promotion) {
@@ -358,9 +336,7 @@ const togglePromotionStatus = async (req, res) => {
       });
     }
 
-    /* ===============================
-       TOGGLE STATUS
-    =============================== */
+   
     let newStatus;
     if (promotion.status === "active") {
       newStatus = "inactive";
@@ -390,9 +366,7 @@ const togglePromotionStatus = async (req, res) => {
 };
 const getAllPromotions = async (req, res) => {
   try {
-    /* ===============================
-       PAGINATION (Y CHANG getAllUser)
-    =============================== */
+   
     const { page = 1, limit = 10 } = req.query;
 
     const pageNum = parseInt(page) || 1;
@@ -414,9 +388,7 @@ const getAllPromotions = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    /* ===============================
-       QUERY DATA
-    =============================== */
+    
     const promotions = await model.promotions.findAll({
       limit: pageSize,
       offset,
@@ -459,9 +431,7 @@ const getActivePromotionsForUser = async (req, res) => {
   try {
     const user_id = req.user.user_id;
 
-    /* ===============================
-       QUERY ACTIVE PROMOTIONS
-    =============================== */
+   
     const promotions = await model.promotions.findAll({
       where: {
         status: "active",
@@ -476,13 +446,11 @@ const getActivePromotionsForUser = async (req, res) => {
       });
     }
 
-    /* ===============================
-       FORMAT DATA (GIỐNG getAllPromotions)
-    =============================== */
+ 
     const formattedData = [];
 
     for (const promotion of promotions) {
-      // Đếm số lần user đã dùng promotion này
+     
       const usedCount = await model.promotion_usages.count({
   where: {
     promotion_id: promotion.promotion_id,
@@ -490,7 +458,7 @@ const getActivePromotionsForUser = async (req, res) => {
   include: [
     {
       model: model.orders,
-      as: "order",          // 👈 QUAN TRỌNG
+      as: "order",        
       required: true,
       where: { user_id },
     },
@@ -498,7 +466,7 @@ const getActivePromotionsForUser = async (req, res) => {
 });
 
 
-      // Tính số lượt còn lại
+      
       let remaining_usage = null;
       if (promotion.usage_per_user !== null) {
         remaining_usage = Math.max(
