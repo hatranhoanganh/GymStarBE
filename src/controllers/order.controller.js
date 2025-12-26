@@ -6,7 +6,7 @@ import {
   prepareMomoPayment,
   cancelOrderAndRestoreStock,
 } from "./momo.controller.js";
-import { Op } from "sequelize";
+
 
 dotenv.config();
 const model = initModels(sequelize);
@@ -652,12 +652,7 @@ const cancelOrder = async (req, res) => {
 };
 
 
-function removeVietnameseTones(str) {
-  if (!str) return "";
-  str = str.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-  str = str.replace(/đ/g, "d").replace(/Đ/g, "D");
-  return str;
-}
+
 
 
 
@@ -1010,6 +1005,113 @@ const reorderCart = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+const getOrdersByStatus = async (req, res) => {
+  try {
+    const { status, page = 1, limit = 10, user_id: queryUserId } = req.query;
+
+    const role = req.user.role_name;
+    const tokenUserId = req.user.user_id;
+
+    let userFilter = {};
+
+    if (role === "Khách hàng") {
+      userFilter.user_id = tokenUserId;
+    } else if (role === "Quản trị viên" || role === "Quản lý đơn hàng") {
+      if (queryUserId) userFilter.user_id = queryUserId;
+    } else {
+      return res.status(403).json({ message: "Không có quyền truy cập" });
+    }
+
+   
+    if (status) userFilter.status = status;
+
+   
+    const pageNum = parseInt(page, 10) || 1;
+    const pageSize = parseInt(limit, 10) || 10;
+
+    const count = await model.orders.count({ where: userFilter });
+    const totalPages = Math.ceil(count / pageSize);
+    const validPage = Math.min(pageNum, totalPages || 1);
+    const offset = (validPage - 1) * pageSize;
+
+   
+    const orders = await model.orders.findAll({
+      where: userFilter,
+      limit: pageSize,
+      offset,
+      order: [["order_id", "DESC"]],
+      include: [
+        {
+          model: model.order_details,
+          as: "order_details",
+          include: [
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              include: [{ model: model.products, as: "product" }],
+            },
+          ],
+        },
+      ],
+    });
+
+    if (orders.length === 0) {
+      return res.status(200).json({
+        message: "Không có đơn hàng nào",
+        total: 0,
+        page: validPage,
+        totalPages,
+        data: [],
+      });
+    }
+
+    
+    const formatted = orders.map((order) => {
+      const items = order.order_details.map((detail) => {
+        const p = detail.product_variant.product;
+        const priceOriginal = Number(Number(p.price).toFixed(2));
+        const discount = Number(Number(p.discount || 0).toFixed(2));
+        const finalPrice = Number(
+          (priceOriginal * (1 - discount / 100)).toFixed(2)
+        );
+
+        return {
+          product_id: p.product_id,
+          name: p.name,
+          thumbnail: p.thumbnail,
+          product_variant_id: detail.product_variant_id,
+          color: detail.product_variant.color,
+          size: detail.product_variant.size,
+          sku: detail.product_variant.sku,
+          quantity: detail.quantity,
+          price_original: priceOriginal,
+          discount,
+          final_price: finalPrice,
+        };
+      });
+
+      return {
+        order_id: order.order_id,
+        user_id: order.user_id,
+        status: order.status,
+        order_date: formatVNDateTime(order.order_date),
+        total: Number(Number(order.total).toFixed(2)),
+        items,
+      };
+    });
+
+    return res.status(200).json({
+      message: "Lấy danh sách đơn hàng thành công",
+      total: count,
+      page: validPage,
+      totalPages,
+      data: formatted,
+    });
+  } catch (error) {
+    console.error("Lỗi getOrdersByStatus:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 
 export {
   placeDirectOrder,
@@ -1019,4 +1121,5 @@ export {
   getAllOrders,
   updateOrderStatus,
   reorderCart,
+  getOrdersByStatus,
 };

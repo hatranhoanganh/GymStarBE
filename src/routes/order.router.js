@@ -9,6 +9,7 @@ import {
   getAllOrders,
   updateOrderStatus,
   reorderCart,
+  getOrdersByStatus,
 } from "../controllers/order.controller.js";
 
 const OrderRouter = express.Router();
@@ -21,6 +22,7 @@ OrderRouter.post("/MuaLai/:order_detail_id",verifyToken, reorderCart);
 
 //quản trị viên, quản lý đơn hàng và chính mình
 OrderRouter.get("/LayChiTietDonHang/:order_id",verifyToken, getOrderDetail);
+OrderRouter.get("/LayDanhSachDonHangUser",verifyToken, getOrdersByStatus);
 
 //quản trị viên và quản lý đơn hàng
 OrderRouter.get("/LayDanhSachTatCaDonHang",verifyToken,

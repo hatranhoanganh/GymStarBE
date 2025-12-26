@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 import axios from "axios";
-import cron from "node-cron"; 
+import cron from "node-cron";
 import { Op } from "sequelize";
 import { createHmac } from "crypto";
 
@@ -20,30 +20,33 @@ const requestType = "payWithMethod";
 
 cron.schedule("* * * * *", async () => {
   const now = new Date();
+
   const expiredOrders = await model.orders.findAll({
     where: {
-      status: "chờ xác nhận", 
-      order_date: { [Op.lt]: new Date(now - 15 * 60 * 1000) }
+      status: "chờ xác nhận",
+      order_date: { [Op.lt]: new Date(now - 15 * 60 * 1000) },
     },
     include: [
       {
         model: model.payments,
-        as: "payment", 
-        where: {
-          method: "MOMO",
-          status: { [Op.not]: "thành công" }
-        },
-        required: true
-      }
-    ]
+        as: "payment",
+        where: { method: "MOMO" },
+        required: false,
+      },
+    ],
   });
 
-  for (const order of expiredOrders) {
+  const ordersToCancel = expiredOrders.filter(
+    (order) => !order.payment.some((p) => p.status === "thành công")
+  );
+
+  for (const order of ordersToCancel) {
     await cancelOrderAndRestoreStock(order.order_id);
-    console.log(`Đơn MoMo #${order.order_id} quá hạn 15 phút → đã hủy và hoàn stock`);
+    console.log(
+      `Đơn MoMo #${order.order_id} quá hạn 15 phút → đã hủy và hoàn stock`
+    );
   }
 });
-
 
 const createMoMoSignature = (params) => {
   return Object.keys(params)
@@ -51,12 +54,6 @@ const createMoMoSignature = (params) => {
     .map((key) => `${key}=${params[key]}`)
     .join("&");
 };
-
-
-
-
-
-
 
 export const cancelOrderAndRestoreStock = async (order_id) => {
   let t;
@@ -108,7 +105,6 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   }
 };
 
-
 export const updatePayment = async (req, res) => {
   console.log("MoMo IPN nhận được:", req.body);
   try {
@@ -128,7 +124,6 @@ export const updatePayment = async (req, res) => {
       signature,
     } = req.body;
 
- 
     const rawSignature = [
       `accessKey=${accessKey}`,
       `amount=${amount}`,
@@ -157,25 +152,27 @@ export const updatePayment = async (req, res) => {
     const order_id = JSON.parse(extraData || "{}").order_id;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    
     const payments = await model.payments.findAll({
       where: { order_id, method: "MOMO" },
       order: [["payment_id", "DESC"]],
     });
 
-    const payment = payments.find(p => p.status !== "thành công");
-    if (!payment) return res.status(404).json({ message: "Không tìm thấy payment chưa thành công" });
+    const payment = payments.find((p) => p.status !== "thành công");
+    if (!payment)
+      return res
+        .status(404)
+        .json({ message: "Không tìm thấy payment chưa thành công" });
 
     if (resultCode == 0) {
       await payment.update({
         status: "thành công",
-        payment_date: new Date(Number(responseTime)), 
+        payment_date: new Date(Number(responseTime)),
         trans_id: transId?.toString(),
       });
     } else {
       await payment.update({
         status: "thất bại",
-        payment_date: null, 
+        payment_date: null,
       });
     }
 
@@ -186,35 +183,34 @@ export const updatePayment = async (req, res) => {
   }
 };
 
-
 export const retryPayment = async (req, res) => {
   try {
     const { order_id } = req.body;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
     const order = await model.orders.findOne({ where: { order_id } });
-    if (!order) return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+    if (!order)
+      return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
     if (order.status === "đã hủy")
       return res.status(400).json({ message: "Đơn hàng đã bị hủy" });
 
-
     const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
     if (new Date() > expiredAt) {
-      return res.status(400).json({ message: "Đơn hàng đã hết hạn thanh toán" });
+      return res
+        .status(400)
+        .json({ message: "Đơn hàng đã hết hạn thanh toán" });
     }
 
-    
     const newPayment = await model.payments.create({
       order_id,
       method: "MOMO",
       amount: order.total,
       total: order.total,
       status: "đang chờ",
-      payment_date: null, 
+      payment_date: null,
     });
 
-  
     const momoData = await prepareMomoPayment(order_id);
 
     return res.json({
@@ -227,14 +223,6 @@ export const retryPayment = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
-
-
-
-
-
-
 
 export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
