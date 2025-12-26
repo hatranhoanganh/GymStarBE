@@ -254,7 +254,7 @@ export const prepareMomoPayment = async (order_id) => {
     orderId,
     orderInfo,
     partnerCode,
-    redirectUrl: `http://localhost:5173/dat-hang-thanh-cong/${order_id}`,
+    redirectUrl: `http://localhost:5173/ket-qua-thanh-toan/${order_id}`,
     requestId,
     requestType: "payWithMethod",
   };
@@ -269,7 +269,7 @@ export const prepareMomoPayment = async (order_id) => {
     amount,
     orderId,
     orderInfo,
-    redirectUrl: `http://localhost:5173/dat-hang-thanh-cong/${order_id}`,
+    redirectUrl: `http://localhost:5173/ket-qua-thanh-toan/${order_id}`,
     ipnUrl,
     extraData,
     requestType: "payWithMethod",

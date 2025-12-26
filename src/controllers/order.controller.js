@@ -492,6 +492,7 @@ const getOrdersByStatus = async (req, res) => {
   }
 };
 
+
 const getOrderDetail = async (req, res) => {
   try {
     const { order_id } = req.params;
@@ -533,6 +534,7 @@ const getOrderDetail = async (req, res) => {
             "status",
             "payment_date",
           ],
+         
         },
         {
           model: model.order_details,
@@ -570,6 +572,12 @@ const getOrderDetail = async (req, res) => {
     if (!order) {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
+    const payments = order.payment || [];
+
+const latestPayment =
+  payments.length > 0
+    ? payments.sort((a, b) => b.payment_id - a.payment_id)[0]
+    : null;
 
     const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"];
     if (!allowedFullAccessRoles.includes(role)) {
@@ -584,6 +592,7 @@ const getOrderDetail = async (req, res) => {
       order_id: order.order_id,
       order_date: formatVNDateTime(order.order_date),
       status: order.status,
+      payment_status: latestPayment?.status || "đang chờ",
       total: Number(order.total),
       note: order.note || null,
       receiver_name: order.receiver_name,
@@ -602,18 +611,17 @@ const getOrderDetail = async (req, res) => {
           }
         : null,
       payments: order.payment
-        ? [
-            {
-              payment_id: order.payment.payment_id,
-              method: order.payment.method,
-              total: Number(order.payment.total),
-              status: order.payment.status,
-              payment_date: order.payment.payment_date
-                ? formatVNDateTime(order.payment.payment_date)
-                : null,
-            },
-          ]
-        : [],
+  ? order.payment.map(p => ({
+      payment_id: p.payment_id,
+      method: p.method,
+      total: Number(p.total),
+      status: p.status,
+      payment_date: p.payment_date
+        ? formatVNDateTime(p.payment_date)
+        : null,
+    }))
+  : [],
+
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
@@ -650,6 +658,8 @@ const getOrderDetail = async (req, res) => {
       .json({ message: "Lỗi server", error: error.message });
   }
 };
+
+
 
 
 const cancelOrder = async (req, res) => {

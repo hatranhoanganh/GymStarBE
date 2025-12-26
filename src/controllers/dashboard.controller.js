@@ -48,6 +48,7 @@ const getDashboardStatsToday = async (req, res) => {
                   [Op.gte]: todayStart,
                   [Op.lt]: todayEnd,
                 },
+                 status: "đã giao", 
               },
               attributes: [],
             },
