@@ -456,43 +456,7 @@ const loginUser = async (req, res) => {
   }
 };
 
-const refreshTokenRoute = async (req, res) => {
-  const { refreshToken } = req.body;
-  if (!refreshToken)
-    return res.status(400).json({ message: "Thiếu refresh token" });
 
-  try {
-    const decoded = jwt.verify(refreshToken, process.env.REFRESH_TOKEN_SECRET);
-    const user = await model.users.findByPk(decoded.user_id);
-    if (!user)
-      return res.status(404).json({ message: "Người dùng không tồn tại" });
-    if (user.status === "disabled") {
-      return res.status(403).json({ message: "Tài khoản đã bị vô hiệu hóa." });
-    }
-
-    const newAccessToken = jwt.sign(
-      { user_id: user.user_id, email: user.email, role: user.role },
-      process.env.ACCESS_TOKEN_SECRET,
-      { expiresIn: "15m" }
-    );
-
-    const newRefreshToken = jwt.sign(
-      { user_id: user.user_id },
-      process.env.REFRESH_TOKEN_SECRET,
-      { expiresIn: "7d" }
-    );
-
-    return res.json({
-      message: "Làm mới token thành công",
-      accessToken: newAccessToken,
-      refreshToken: newRefreshToken,
-    });
-  } catch (error) {
-    return res
-      .status(401)
-      .json({ message: "Refresh token không hợp lệ hoặc đã hết hạn" });
-  }
-};
 
 const getAllUsers = async (req, res) => {
   try {
@@ -1462,7 +1426,6 @@ export {
   registerUser,
   verifyEmail,
   loginUser,
-  refreshTokenRoute,
   getAllUsers,
   getUserById,
   updateStatus,

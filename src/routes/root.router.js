@@ -11,6 +11,7 @@ import MoMoRouter from "./momo.router.js";
 import FeedbackRouter from "./feedback.router.js";
 import ReviewRouter from "./review.outer.js";
 import DashboardRouter from "./dashboard.router.js";
+import PromotionRouter from "./promotion.router.js";
 
 const rootRoutes = express.Router();
 
@@ -25,6 +26,7 @@ rootRoutes.use("/QuanLyGopY", FeedbackRouter);
 rootRoutes.use("/MoMo", MoMoRouter);
 rootRoutes.use("/QuanLyDanhGia", ReviewRouter);
 rootRoutes.use("/ThongKeBaoCao", DashboardRouter);
+rootRoutes.use("/QuanLyKhuyenMai", PromotionRouter);
 
 
 

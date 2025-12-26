@@ -1,4 +1,3 @@
-// src/config/database.js
 import { Sequelize } from "sequelize";
 import dotenv from "dotenv";
 import path from "path";
@@ -12,7 +11,7 @@ if (process.env.NODE_ENV !== "production") {
 }
 
 
-// === ƯU TIÊN DATABASE_URL (Render) ===
+
 let sequelize;
 
 if (process.env.DATABASE_URL) {
@@ -27,7 +26,7 @@ if (process.env.DATABASE_URL) {
     pool: { max: 10, min: 0, acquire: 60000, idle: 10000 },
   });
 } 
-// === LOCAL DB ===
+
 else {
   const required = ["DB_NAME", "DB_USER", "DB_PASSWORD", "DB_HOST"];
   required.forEach(key => {

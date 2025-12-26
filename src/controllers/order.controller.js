@@ -1221,6 +1221,7 @@ const reorderCart = async (req, res) => {
         cart_id: cart.cart_id,
         product_variant_id: variantId,
         product_name: variant.product.name,
+        thumbnail:variant.product.thumbnail,
         color: variant.color,
         size: variant.size,
         quantity: cartDetail ? cartDetail.quantity : 1,

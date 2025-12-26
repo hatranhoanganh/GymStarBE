@@ -121,7 +121,7 @@ export const sendOTPEmail = async (email, otp) => {
             ${otp}
           </span>
         </div>
-        <p>Mã OTP này có hiệu lực trong <strong>15 phút</strong>.</p>
+        <p>Mã OTP này có hiệu lực trong <strong>2 phút</strong>.</p>
         <p style="color: #666; font-size: 14px;">
           Nếu bạn không yêu cầu, vui lòng bỏ qua email này.
         </p>

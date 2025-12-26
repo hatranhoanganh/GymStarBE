@@ -19,6 +19,8 @@ import _user_addresses from "./user_addresses.js";
 import _users from "./users.js";
 import _roles from "./roles.js";
 import _cart_details from "./cart_details.js";
+import _promotions from "./promotions.js";
+import _promotion_usages from "./promotion_usages.js";
 
 
 export default function initModels(sequelize) {
@@ -41,6 +43,8 @@ export default function initModels(sequelize) {
   const users = _users.init(sequelize, DataTypes);
   const roles = _roles.init(sequelize, DataTypes);
   const cart_details = _cart_details.init(sequelize, DataTypes);
+   const promotions = _promotions.init(sequelize, DataTypes);
+  const promotion_usages = _promotion_usages.init(sequelize, DataTypes);
 
 
  
@@ -107,7 +111,11 @@ roles.hasMany(users, { as: "users", foreignKey: "role_id" });
 cart_details.belongsTo(product_variants, { as: "product_variant", foreignKey: "product_variant_id" });
 product_variants.hasMany(cart_details, { as: "cart_details", foreignKey: "product_variant_id" });
 
+ promotion_usages.belongsTo(promotions, { as: "promotion", foreignKey: "promotion_id" });
+  promotions.hasMany(promotion_usages, { as: "promotion_usages", foreignKey: "promotion_id" });
 
+  promotion_usages.belongsTo(orders, { as: "order", foreignKey: "order_id" });
+  orders.hasOne(promotion_usages, { as: "promotion_usage", foreignKey: "order_id" });
 
 
   return {
@@ -129,5 +137,7 @@ product_variants.hasMany(cart_details, { as: "cart_details", foreignKey: "produc
     user_addresses,
     users,
     roles,
+     promotions,
+    promotion_usages,
   };
 }

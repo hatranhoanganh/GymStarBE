@@ -6,7 +6,6 @@ import {
   registerUser,
   verifyEmail,
   loginUser,
-  refreshTokenRoute,
   getUserById,
   updateUser,
   changePassword,
@@ -34,7 +33,6 @@ userRouter.get("/LayThongTinTaiKhoanTheoStatus",verifyToken,requireRoleExcept("K
 userRouter.post("/DangKy", registerUser);
 userRouter.get("/verify-email", verifyEmail);
 userRouter.post("/DangNhap", loginUser);
-userRouter.post("/refresh-token", refreshTokenRoute);
 userRouter.post("/QuenMatKhau", forgotPasswordLimiter, forgotPassword);
 userRouter.post("/verify-otp", verifyOTP);
 userRouter.put("/DatLaiMatKhau", resetPassword);  
