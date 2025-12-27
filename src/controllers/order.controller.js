@@ -6,7 +6,7 @@ import {
   prepareMomoPayment,
   cancelOrderAndRestoreStock,
 } from "./momo.controller.js";
-
+import { Op } from "sequelize";
 
 dotenv.config();
 const model = initModels(sequelize);
@@ -785,11 +785,14 @@ const updateOrderStatus = async (req, res) => {
 
     const order = await model.orders.findByPk(order_id, {
       include: [
-        { model: model.payments, as: "payment", required: true },
         {
           model: model.order_details,
           as: "order_details",
           include: [{ model: model.product_variants, as: "product_variant" }],
+        },
+        {
+          model: model.payments,
+          as: "payment",
         },
       ],
       transaction: t,
@@ -800,7 +803,7 @@ const updateOrderStatus = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
 
-    const current = order.status;
+    const previousStatus = order.status;
 
     const allowedTransitions = {
       "chờ xác nhận": ["đã xác nhận"],
@@ -812,46 +815,52 @@ const updateOrderStatus = async (req, res) => {
       "đổi hàng": [],
     };
 
-    let nextStatus;
-
-    if (
-      !allowedTransitions[current] ||
-      allowedTransitions[current].length === 0
-    ) {
+    if (!allowedTransitions[previousStatus]) {
       await t.rollback();
-      return res.status(400).json({
-        message: `Đơn hàng đang ở trạng thái cuối "${current}", không thể cập nhật tiếp`,
-      });
+      return res.status(400).json({ message: "Trạng thái không hợp lệ" });
     }
 
-    if (current === "đang giao") {
-      if (
-        !requestedStatus ||
-        !allowedTransitions[current].includes(requestedStatus)
-      ) {
+    let newStatus;
+
+    if (previousStatus === "đang giao") {
+      if (!allowedTransitions[previousStatus].includes(requestedStatus)) {
         await t.rollback();
         return res.status(400).json({
           message:
-            'Khi trạng thái là "đang giao", phải truyền "đã giao" hoặc "giao thất bại"',
+            'Khi trạng thái là "đang giao" chỉ được chuyển sang "đã giao" hoặc "giao thất bại"',
         });
       }
-      nextStatus = requestedStatus;
+      newStatus = requestedStatus;
     } else {
-      nextStatus = allowedTransitions[current][0];
+      newStatus = allowedTransitions[previousStatus][0];
     }
 
-    if (nextStatus === "đã giao") {
+   
+    if (newStatus === "đã giao") {
       order.received_date = new Date();
 
-      if (order.payment.method === "COD") {
-        order.payment.status = "thành công";
-        order.payment.payment_date = new Date();
+      for (const p of order.payment || []) {
+        if (p.method === "COD") {
+          await p.update(
+            {
+              status: "thành công",
+              payment_date: new Date(),
+            },
+            { transaction: t }
+          );
+        }
       }
     }
 
-    if (nextStatus === "giao thất bại" || nextStatus === "đổi hàng") {
-      order.payment.status = "thất bại";
-      order.payment.payment_date = null;
+    if (["giao thất bại", "đổi hàng"].includes(newStatus)) {
+      for (const p of order.payment || []) {
+        if (p.status !== "thành công") {
+          await p.update(
+            { status: "thất bại", payment_date: null },
+            { transaction: t }
+          );
+        }
+      }
 
       for (const detail of order.order_details) {
         await detail.product_variant.increment("stock", {
@@ -861,9 +870,7 @@ const updateOrderStatus = async (req, res) => {
       }
     }
 
-    order.status = nextStatus;
-    await order.save({ transaction: t });
-    await order.payment.save({ transaction: t });
+    await order.update({ status: newStatus }, { transaction: t });
 
     await t.commit();
 
@@ -871,11 +878,7 @@ const updateOrderStatus = async (req, res) => {
       message: "Cập nhật trạng thái thành công",
       data: {
         order_id: order.order_id,
-        new_status: nextStatus,
-        payment_status: order.payment.status,
-        stock_restored:
-          nextStatus === "đổi hàng" || nextStatus === "giao thất bại",
-        received_date: formatVNDateTime(order.received_date),
+        new_status: newStatus,
       },
     });
   } catch (error) {
@@ -884,6 +887,7 @@ const updateOrderStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 const reorderCart = async (req, res) => {
   try {
     const user_id = req.user?.user_id;
