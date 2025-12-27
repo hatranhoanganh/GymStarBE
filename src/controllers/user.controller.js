@@ -204,88 +204,170 @@ const registerUser = async (req, res) => {
 
 const verifyEmail = async (req, res) => {
   const { token } = req.query;
+  const CLIENT_URL = process.env.CLIENT_URL || "http://localhost:5173";
+
+  const renderPage = ({ title, message, status = "error", buttonText, buttonLink, extra }) => {
+    const isSuccess = status === "success";
+
+    return `
+    <!DOCTYPE html>
+    <html lang="vi">
+    <head>
+      <meta charset="UTF-8" />
+      <title>${title}</title>
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <style>
+        body {
+          margin: 0;
+          font-family: Arial, sans-serif;
+          background: #ffffff;
+        }
+        .container {
+          min-height: 100vh;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          padding: 16px;
+        }
+        .card {
+          max-width: 420px;
+          width: 100%;
+          text-align: center;
+        }
+        .logo {
+          margin-bottom: 16px;
+        }
+        .title {
+          font-size: 18px;
+          font-weight: bold;
+          letter-spacing: 1px;
+          margin-bottom: 8px;
+          color: #000;
+        }
+        .desc {
+          font-size: 14px;
+          color: #6b7280;
+          margin-bottom: 24px;
+        }
+        .message {
+          font-size: 15px;
+          color: ${isSuccess ? "#065f46" : "#991b1b"};
+          margin-bottom: 24px;
+        }
+        .button {
+          display: inline-block;
+          width: 100%;
+          padding: 14px 0;
+          background: #000;
+          color: #fff;
+          text-decoration: none;
+          border-radius: 999px;
+          font-weight: 600;
+          transition: background 0.2s ease;
+        }
+        .button:hover {
+          background: #374151;
+        }
+        .extra {
+          margin-top: 16px;
+          font-size: 13px;
+          color: #9ca3af;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="container">
+        <div class="card">
+          <div class="logo">
+            <img src="https://res.cloudinary.com/diwbvhyre/image/upload/v1766801220/logo_yohafg.png" width="140" alt="Logo"/>
+          </div>
+
+          <div class="title">${title}</div>
+          <div class="desc">Gym & Lifestyle – Đồng hành cùng bạn mỗi ngày</div> 
+
+          <div class="message">${message}</div>
+
+          ${buttonText
+        ? `<a class="button" href="${buttonLink}">${buttonText}</a>`
+        : ""
+      }
+
+          ${extra ? `<div class="extra">${extra}</div>` : ""}
+        </div>
+      </div>
+    </body>
+    </html>
+    `;
+  };
 
   if (!token) {
-    return res.status(400).send(`
-        <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-          <h3 style="color:#e53e3e;">Thiếu mã xác nhận</h3>
-          <p>Vui lòng kiểm tra link trong email.</p>
-        </div>
-      `);
+    return res.status(400).send(
+      renderPage({
+        title: "XÁC NHẬN THẤT BẠI",
+        message: "Thiếu mã xác nhận. Vui lòng kiểm tra lại email.",
+      })
+    );
   }
 
-  let decoded;
-
   try {
-    decoded = jwt.decode(token);
+    const decoded = jwt.decode(token);
     if (!decoded?.user_id) {
-      return res.status(400).send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-            <h3 style="color:#e53e3e;">Link xác nhận không hợp lệ</h3>
-            <p>Token bị lỗi hoặc đã bị sửa đổi.</p>
-          </div>
-        `);
+      return res.status(400).send(
+        renderPage({
+          title: "LINK KHÔNG HỢP LỆ",
+          message: "Token không hợp lệ hoặc đã bị chỉnh sửa.",
+        })
+      );
     }
 
     const user = await model.users.findByPk(decoded.user_id);
     if (!user) {
-      return res.status(400).send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-            <h3 style="color:#e53e3e;">Mã xác nhận không hợp lệ</h3>
-            <p>Người dùng không tồn tại trong hệ thống.</p>
-          </div>
-        `);
+      return res.status(400).send(
+        renderPage({
+          title: "NGƯỜI DÙNG KHÔNG TỒN TẠI",
+          message: "Tài khoản không tồn tại trong hệ thống.",
+        })
+      );
     }
 
     if (user.status === "đang hoạt động") {
-      return res.send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#f0fff4;">
-            <h3 style="color:#48bb78;">Tài khoản đã được xác nhận</h3>
-            <p>Bạn có thể đăng nhập ngay bây giờ.</p>
-            <a href="${
-              process.env.CLIENT_URL || "http://localhost:5173"
-            }/dang-nhap"
-              style="background:#48bb78; color:white; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:bold; margin-top:20px; display:inline-block;">
-              Đăng nhập ngay
-            </a>
-          </div>
-        `);
+      return res.send(
+        renderPage({
+          title: "TÀI KHOẢN ĐÃ XÁC NHẬN",
+          message: "Bạn có thể đăng nhập ngay bây giờ.",
+          status: "success",
+          buttonText: "ĐĂNG NHẬP",
+          buttonLink: `${CLIENT_URL}/dang-nhap`,
+        })
+      );
     }
 
     try {
       const verified = jwt.verify(token, process.env.JWT_SECRET);
 
       if (verified.purpose !== "email_verify") {
-        return res.status(400).send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-            <h3 style="color:#e53e3e;">Link xác nhận không hợp lệ</h3>
-            <p>Token không đúng mục đích sử dụng.</p>
-          </div>
-        `);
+        return res.status(400).send(
+          renderPage({
+            title: "LINK KHÔNG HỢP LỆ",
+            message: "Token không đúng mục đích sử dụng.",
+          })
+        );
       }
 
       await user.update({ status: "đang hoạt động" });
       await sendConfirmationEmail(user.email, user.full_name);
 
-      return res.send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#f0fff4; min-height:100vh;">
-            <div style="background:white; padding:40px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); max-width:500px; margin:0 auto;">
-              <h2 style="color:#48bb78; margin-bottom:16px;">Xác nhận thành công!</h2>
-              <p style="font-size:16px; color:#2d3748;">Chào mừng <strong>${
-                user.full_name
-              }</strong>!</p>
-              <p style="color:#718096; margin:20px 0;">Tài khoản đã được kích hoạt.</p>
-              <a href="${
-                process.env.CLIENT_URL || "http://localhost:5173"
-              }/dang-nhap"
-                style="display:inline-block; background:#48bb78; color:white; padding:14px 28px; text-decoration:none; border-radius:8px; font-weight:bold; margin-top:20px;">
-                Đăng nhập ngay
-              </a>
-            </div>
-          </div>
-        `);
-    } catch (verifyErr) {
-      if (verifyErr.name === "TokenExpiredError") {
+      return res.send(
+        renderPage({
+          title: "XÁC NHẬN THÀNH CÔNG",
+          message: `Chào mừng <b>${user.full_name}</b>! Tài khoản đã được kích hoạt.`,
+          status: "success",
+          buttonText: "ĐĂNG NHẬP NGAY",
+          buttonLink: `${CLIENT_URL}/dang-nhap`,
+        })
+      );
+    } catch (err) {
+      if (err.name === "TokenExpiredError") {
         const newToken = jwt.sign(
           { user_id: user.user_id, email: user.email, purpose: "email_verify" },
           process.env.JWT_SECRET,
@@ -294,47 +376,34 @@ const verifyEmail = async (req, res) => {
 
         await sendVerificationEmail(user.email, newToken);
 
-        return res.send(`
-            <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fef5e7; min-height:100vh;">
-              <div style="background:white; padding:40px; border-radius:12px; box-shadow:0 4px 12px rgba(0,0,0,0.1); max-width:500px; margin:0 auto;">
-                <h2 style="color:#f56565; margin-bottom:16px;">Mã xác nhận đã hết hạn</h2>
-                <p style="font-size:16px; color:#2d3748;">
-                  Không sao! Chúng tôi đã <strong>gửi mã xác nhận mới</strong> đến:
-                </p>
-                <h3 style="color:#48bb78; margin:16px 0; font-size:18px;">${
-                  user.email
-                }</h3>
-                <p style="color:#718096;">
-                  Vui lòng kiểm tra <strong>hộp thư đến</strong> và <strong>mục Spam/Junk</strong>.<br>
-                  Link mới có hiệu lực trong <strong>2 phút</strong>.
-                </p>  
-                <p style="margin-top:24px; font-size:14px; color:#a0aec0;">
-                  <em>Thời gian hiện tại: ${new Date().toLocaleString("vi-VN", {
-                    timeZone: "Asia/Ho_Chi_Minh",
-                  })}</em>
-                </p>
-              </div>
-            </div>
-          `);
+        return res.send(
+          renderPage({
+            title: "LINK ĐÃ HẾT HẠN",
+            message: `Chúng tôi đã gửi link xác nhận mới đến <b>${user.email}`,
+            buttonLink: CLIENT_URL,
+            extra: "Vui lòng kiểm tra hộp thư đến hoặc Spam.",
+          })
+        );
       }
 
-      return res.status(400).send(`
-          <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-            <h3 style="color:#e53e3e;">Mã xác nhận không hợp lệ</h3>
-            <p>Vui lòng sử dụng link trong email mới nhất.</p>
-          </div>
-        `);
+      return res.status(400).send(
+        renderPage({
+          title: "XÁC NHẬN THẤT BẠI",
+          message: "Vui lòng sử dụng link xác nhận mới nhất.",
+        })
+      );
     }
-  } catch (err) {
-    console.error("Lỗi verifyEmail:", err);
-    return res.status(400).send(`
-        <div style="text-align:center; padding:60px; font-family: Arial, sans-serif; background:#fff5f5;">
-          <h3 style="color:#e53e3e;">Mã xác nhận không hợp lệ</h3>
-          <p>Vui lòng thử lại hoặc liên hệ hỗ trợ.</p>
-        </div>
-      `);
+  } catch (error) {
+    console.error("verifyEmail error:", error);
+    return res.status(400).send(
+      renderPage({
+        title: "LỖI HỆ THỐNG",
+        message: "Đã có lỗi xảy ra. Vui lòng thử lại sau.",
+      })
+    );
   }
 };
+
 
 const loginUser = async (req, res) => {
   try {
