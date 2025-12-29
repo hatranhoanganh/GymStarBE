@@ -33,11 +33,15 @@ export default class product_variants extends Model {
           allowNull: true,
           defaultValue: 0,
         },
-        
+        price: {
+          type: DataTypes.DECIMAL(10, 2),
+          allowNull: false,
+        },
+
         sku: {
           type: DataTypes.STRING(50),
           allowNull: true,
-          unique: true, 
+          unique: true,
         },
       },
       {
@@ -51,7 +55,6 @@ export default class product_variants extends Model {
             unique: true,
             fields: [{ name: "product_variant_id" }],
           },
-    
         ],
       }
     );

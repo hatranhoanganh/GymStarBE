@@ -7,6 +7,7 @@ import {
   addSizeToVariant,
   getAllProducts,
   updateFullProduct,
+  deleteProductVariant,
   getActiveProducts,
   getNewProductsLast2Days,
   getProductDetail,
@@ -71,6 +72,8 @@ ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),getProductsByStatus);
 ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProduct);
+  ProductRouter.delete("/XoaBienThe/:product_id/:color",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProductVariant);
 
 //không cần phân quyền
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);

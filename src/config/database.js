@@ -19,6 +19,7 @@ if (process.env.DATABASE_URL) {
   sequelize = new Sequelize(process.env.DATABASE_URL, {
     dialect: "postgres",
     logging: false,
+     timezone: "+07:00",
     dialectOptions: {
       ssl: { require: true, rejectUnauthorized: false },
     },
@@ -45,6 +46,7 @@ else {
       port: process.env.DB_PORT || 5432,
       dialect: "postgres",
       logging: false,
+       timezone: "+07:00",
       dialectOptions: process.env.DB_SSL === "true"
         ? { ssl: { require: true, rejectUnauthorized: false } }
         : false,

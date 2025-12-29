@@ -45,14 +45,14 @@ const createReview = async (req, res) => {
 
     mediaFiles.forEach((f) => markForDeletion(f.path));
 
-    // ===== VALIDATE CŨ =====
+
     if (!order_detail_id || !rating)
       return sendError("Thiếu order_detail_id hoặc rating");
 
     if (comment && comment.length > 500)
       return sendError("Comment tối đa 500 ký tự");
 
-    // ===== PHÂN LOẠI MEDIA =====
+  
     const images = mediaFiles.filter((f) =>
       f.mimetype.startsWith("image")
     );
@@ -69,7 +69,7 @@ const createReview = async (req, res) => {
     if (images.length + videos.length > 4)
       return sendError("Tối đa 3 ảnh và 1 video");
 
-    // ===== CHECK ORDER =====
+    
     const orderDetail = await model.order_details.findOne({
       where: { order_detail_id },
       include: {
@@ -92,7 +92,7 @@ const createReview = async (req, res) => {
     if (existed)
       return sendError("Đơn hàng này đã được đánh giá");
 
-    // ===== CREATE REVIEW =====
+   
     const review = await model.reviews.create(
       {
         order_detail_id,
@@ -104,13 +104,13 @@ const createReview = async (req, res) => {
       { transaction: t }
     );
 
-    // ===== UPLOAD MEDIA =====
+    
     let uploadedMedia = [];
 
     for (const file of [...images, ...videos]) {
       const result = await cloudinary.uploader.upload(file.path, {
         folder: `reviews/${review.review_id}`,
-        resource_type: "auto", // ⭐ QUAN TRỌNG
+        resource_type: "auto", 
       });
 
       uploadedMedia.push(result.secure_url);

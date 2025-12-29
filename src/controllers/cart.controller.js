@@ -35,14 +35,16 @@ const addToCart = async (req, res) => {
         {
           model: model.products,
           as: "product",
-          attributes: ["product_id", "name", "thumbnail", "price", "discount"],
+          attributes: ["product_id", "name", "thumbnail", "discount"],
         },
       ],
     });
 
     if (!variant) {
       await t.rollback();
-      return res.status(404).json({ message: "Biến thể sản phẩm không tồn tại" });
+      return res
+        .status(404)
+        .json({ message: "Biến thể sản phẩm không tồn tại" });
     }
 
     if (variant.stock < 1) {
@@ -50,8 +52,10 @@ const addToCart = async (req, res) => {
       return res.status(400).json({ message: "Sản phẩm đã hết hàng" });
     }
 
-    
-    let cart = await model.carts.findOne({ where: { user_id }, transaction: t });
+    let cart = await model.carts.findOne({
+      where: { user_id },
+      transaction: t,
+    });
     if (!cart) {
       cart = await model.carts.create({ user_id }, { transaction: t });
     }
@@ -84,7 +88,6 @@ const addToCart = async (req, res) => {
       });
     }
 
- 
     if (qty > variant.stock) {
       await t.rollback();
       return res.status(400).json({ message: "Không đủ hàng trong kho" });
@@ -107,9 +110,6 @@ const addToCart = async (req, res) => {
   }
 };
 
-
-
-
 const getCart = async (req, res) => {
   try {
     const user_id = req.user?.user_id;
@@ -117,7 +117,6 @@ const getCart = async (req, res) => {
     if (!user_id)
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
 
-  
     const user = await model.users.findByPk(user_id, {
       attributes: ["user_id", "full_name", "email", "gender", "birth_date"],
       include: [
@@ -132,7 +131,6 @@ const getCart = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "Người dùng không tồn tại" });
 
-    
     const cart = await model.carts.findOne({
       where: { user_id },
       include: [
@@ -149,19 +147,14 @@ const getCart = async (req, res) => {
                 "color",
                 "size",
                 "stock",
+                "price",
                 "sku",
               ],
               include: [
                 {
                   model: model.products,
                   as: "product",
-                  attributes: [
-                    "product_id",
-                    "name",
-                    "price",
-                    "discount",
-                    "thumbnail",
-                  ],
+                  attributes: ["product_id", "name", "discount", "thumbnail"],
                 },
               ],
             },
@@ -181,39 +174,41 @@ const getCart = async (req, res) => {
       });
     }
 
-  
     const formattedCart = cart.cart_details.map((item) => {
-      const variant = item.product_variant;
-      const product = variant.product;
-      const price = Number(product.price);
-      const discount = Number(product.discount) || 0;
+  const variant = item.product_variant;
+  const product = variant.product;
 
-      const raw_price = price * (1 - discount / 100);
-      const final_price = Math.round(raw_price);
-      const final_price_display = final_price.toFixed(2);
+  const basePrice = Number(variant.price); 
+  const discountPercent = product.discount ? parseFloat(product.discount) : 0;
 
-      return {
-        cart_detail_id: item.cart_detail_id,
-        quantity: item.quantity,
-        cart_id: item.cart_id,
+  const discountedPrice =
+    discountPercent > 0 ? basePrice * (1 - discountPercent / 100) : basePrice;
+  const finalPrice = Math.round(discountedPrice / 1000) * 1000; 
+  const final_price_display = finalPrice.toFixed(2);
 
-        product_variant: {
-          product_variant_id: variant.product_variant_id,
-          color: variant.color,
-          size: variant.size,
-          stock: variant.stock,
-          sku: variant.sku,
-          product: {
-            product_id: product.product_id,
-            name: product.name,
-            thumbnail: product.thumbnail,
-            price,
-            discount,
-            final_price: final_price_display,
-          },
-        },
-      };
-    });
+  return {
+    cart_detail_id: item.cart_detail_id,
+    quantity: item.quantity,
+    cart_id: item.cart_id,
+
+    product_variant: {
+      product_variant_id: variant.product_variant_id,
+      color: variant.color,
+      size: variant.size,
+      stock: variant.stock,
+      sku: variant.sku,
+      price: basePrice,
+      product: {
+        product_id: product.product_id,
+        name: product.name,
+        thumbnail: product.thumbnail,
+        discount: discountPercent,
+        final_price: final_price_display,
+      },
+    },
+  };
+});
+
 
     return res.status(200).json({
       message: "Lấy giỏ hàng thành công",
@@ -358,12 +353,11 @@ const deleteMultipleCartItems = async (req, res) => {
       });
     }
 
-    // Lấy giỏ hàng của user
+  
     const cart = await model.carts.findOne({ where: { user_id } });
     if (!cart)
       return res.status(404).json({ message: "Giỏ hàng không tồn tại" });
 
-    // Xóa nhiều chi tiết giỏ hàng theo cart_id + cart_detail_ids
     const deletedCount = await model.cart_details.destroy({
       where: {
         cart_id: cart.cart_id,
@@ -386,9 +380,6 @@ const deleteMultipleCartItems = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
-
 
 export {
   addToCart,

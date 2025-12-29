@@ -55,11 +55,11 @@ const createPromotion = async (req, res) => {
         .status(400)
         .json({ message: "Description phải từ 5 đến 100 ký tự" });
     }
-    if (!/^[a-zA-ZÀ-ỹ0-9\s.,-]+$/u.test(description)) {
-      return res.status(400).json({
-        message: "Description chỉ được chứa chữ, số, khoảng trắng và dấu ., -",
-      });
-    }
+    // if (!/^[a-zA-ZÀ-ỹ0-9\s.,-]+$/u.test(description)) {
+    //   return res.status(400).json({
+    //     message: "Description chỉ được chứa chữ, số, khoảng trắng và dấu ., -",
+    //   });
+    // }
 
   
     if (!discount_type || !["fixed", "percent"].includes(discount_type)) {

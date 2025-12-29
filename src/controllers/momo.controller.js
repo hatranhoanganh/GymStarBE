@@ -31,7 +31,7 @@ cron.schedule("* * * * *", async () => {
         model: model.payments,
         as: "payment",
         where: { method: "MOMO" },
-        required: false,
+        required: true,
       },
     ],
   });

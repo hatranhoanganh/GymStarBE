@@ -233,7 +233,7 @@ const getRevenueByDateRange = async (req, res) => {
     });
 
     const revenueData = revenueDataRaw.map((item) => ({
-      date: item.date, // yyyy-mm-dd
+      date: item.date, 
       revenue: Number(item.revenue),
       orders: Number(item.orders),
     }));

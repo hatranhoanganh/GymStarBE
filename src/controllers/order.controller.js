@@ -23,19 +23,15 @@ const placeDirectOrder = async (req, res) => {
       note,
       address_id,
       method,
+      promotion_code,
     } = req.body;
 
     if (!product_variant_id || !method)
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
 
     const finalQuantity = parseInt(quantity);
-
-    if (isNaN(finalQuantity))
-      return res.status(400).json({ message: "Số lượng không hợp lệ" });
-
-    if (finalQuantity < 1)
-      return res.status(400).json({ message: "Số lượng tối thiểu là 1" });
-
+    if (isNaN(finalQuantity) || finalQuantity < 1)
+      return res.status(400).json({ message: "Số lượng không hợp lệ hoặc <1" });
     if (finalQuantity > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
 
@@ -57,10 +53,8 @@ const placeDirectOrder = async (req, res) => {
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
-
     if (!variant)
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
-
     if (variant.stock < finalQuantity)
       return res
         .status(400)
@@ -69,23 +63,84 @@ const placeDirectOrder = async (req, res) => {
     const product = await model.products.findByPk(variant.product_id, {
       transaction: t,
     });
-
     if (!product)
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
 
-    const originalPrice = Number(product.price);
+    const basePrice = Number(variant.price);
     const discountPercent = product.discount ? parseFloat(product.discount) : 0;
+    const discountedPrice =
+      discountPercent > 0 ? basePrice * (1 - discountPercent / 100) : basePrice;
+    const finalPrice = Math.round(discountedPrice / 1000) * 1000;
 
-    let finalPrice;
-    if (discountPercent > 0) {
-      const discounted = originalPrice * (1 - discountPercent / 100);
-      finalPrice = Math.round(discounted / 1000) * 1000;
-    } else {
-      finalPrice = originalPrice;
+    let totalAmount = finalPrice * finalQuantity;
+    let discount_amount = 0;
+    let promotion = null;
+
+    // Xử lý mã khuyến mãi nếu có
+    if (promotion_code) {
+      promotion = await model.promotions.findOne({
+        where: {
+          code: promotion_code,
+          status: "active",
+          start_date: { [Op.lte]: new Date() },
+          [Op.or]: [{ end_date: null }, { end_date: { [Op.gte]: new Date() } }],
+        },
+        transaction: t,
+      });
+
+      if (!promotion) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ message: "Mã khuyến mãi không hợp lệ hoặc hết hạn" });
+      }
+
+      // Kiểm tra số lượt sử dụng của user
+      const usageCount = await model.promotion_usages.count({
+        where: { promotion_id: promotion.promotion_id },
+        include: [
+          {
+            model: model.orders,
+            as: "order",
+            where: { user_id },
+            attributes: [],
+          },
+        ],
+        transaction: t,
+      });
+
+      if (usageCount >= promotion.usage_per_user) {
+        await t.rollback();
+        return res.status(400).json({ message: "Bạn đã hết lượt dùng mã này" });
+      }
+
+      if (
+        promotion.min_order_value &&
+        totalAmount < Number(promotion.min_order_value)
+      ) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ message: "Đơn hàng chưa đủ điều kiện áp dụng mã giảm giá" });
+      }
+
+      if (promotion.discount_type === "fixed") {
+        discount_amount = Number(promotion.value);
+      } else if (promotion.discount_type === "percent") {
+        discount_amount = (totalAmount * Number(promotion.value)) / 100;
+        if (promotion.max_discount) {
+          discount_amount = Math.min(
+            discount_amount,
+            Number(promotion.max_discount)
+          );
+        }
+      }
+
+      totalAmount = Math.max(totalAmount - discount_amount, 0);
+      totalAmount = Math.round(totalAmount / 1000) * 1000; // làm tròn cuối cùng
     }
 
-    const totalAmount = finalPrice * finalQuantity;
-
+    // Tạo đơn hàng
     const newOrder = await model.orders.create(
       {
         user_id,
@@ -106,11 +161,22 @@ const placeDirectOrder = async (req, res) => {
         product_variant_id,
         quantity: finalQuantity,
         price: finalPrice,
-        original_price: originalPrice,
+        original_price: basePrice,
         discount: discountPercent > 0 ? discountPercent : null,
       },
       { transaction: t }
     );
+
+    // Tạo promotion_usage nếu có
+    if (promotion) {
+      await model.promotion_usages.create(
+        {
+          promotion_id: promotion.promotion_id,
+          order_id: newOrder.order_id,
+        },
+        { transaction: t }
+      );
+    }
 
     await model.product_variants.decrement("stock", {
       by: finalQuantity,
@@ -138,15 +204,14 @@ const placeDirectOrder = async (req, res) => {
           message: "Chuyển sang thanh toán MoMo",
           order_id: newOrder.order_id,
           payment,
+          discount_amount,
           payUrl: momoResult.payUrl,
         });
-      } catch (error) {
+      } catch (err) {
         await model.payments.destroy({
           where: { order_id: newOrder.order_id },
         });
-
         await cancelOrderAndRestoreStock(newOrder.order_id);
-
         return res.status(500).json({
           message:
             "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hoàn lại hàng tồn kho.",
@@ -158,6 +223,7 @@ const placeDirectOrder = async (req, res) => {
       message: "Đặt hàng COD thành công",
       order_id: newOrder.order_id,
       payment,
+      discount_amount,
     });
   } catch (error) {
     if (t && !t.finished) await t.rollback();
@@ -172,7 +238,8 @@ const placeCartOrder = async (req, res) => {
     t = await sequelize.transaction();
 
     const user_id = req.user.user_id;
-    const { cart_detail_ids, address_id, note, method } = req.body;
+    const { cart_detail_ids, address_id, note, method, promotion_code } =
+      req.body;
 
     if (
       !cart_detail_ids ||
@@ -182,19 +249,13 @@ const placeCartOrder = async (req, res) => {
       return res.status(400).json({ message: "Vui lòng chọn sản phẩm" });
     }
 
-    if (!method) {
+    if (!method || !["COD", "MOMO"].includes(method)) {
       return res
         .status(400)
-        .json({ message: "Vui lòng chọn phương thức thanh toán" });
+        .json({ message: "Phương thức thanh toán không hợp lệ" });
     }
 
-    if (!["COD", "MOMO"].includes(method)) {
-      return res
-        .status(400)
-        .json({ message: "Phương thức thanh toán không hỗ trợ" });
-    }
-
-    let address = address_id
+    const address = address_id
       ? await model.user_addresses.findOne({
           where: { address_id, user_id },
           transaction: t,
@@ -227,14 +288,15 @@ const placeCartOrder = async (req, res) => {
             "size",
             "sku",
             "stock",
+            "price",
             "product_id",
           ],
-          lock: { level: t.LOCK.UPDATE, of: model.product_variants }, // <-- fix FOR UPDATE
+          lock: { level: t.LOCK.UPDATE, of: model.product_variants },
           include: [
             {
               model: model.products,
               as: "product",
-              attributes: ["name", "price", "discount", "thumbnail"],
+              attributes: ["name", "discount", "thumbnail"],
             },
           ],
         },
@@ -249,7 +311,7 @@ const placeCartOrder = async (req, res) => {
         .json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
     }
 
-    let total = 0;
+    let totalAmount = 0;
     const orderDetailsInput = [];
 
     for (const item of cartItems) {
@@ -265,31 +327,97 @@ const placeCartOrder = async (req, res) => {
         });
       }
 
-      const originalPrice = Number(product.price);
+      const basePrice = Number(variant.price);
       const discountPercent = product.discount
         ? parseFloat(product.discount)
         : 0;
-      let finalPrice =
+      const discountedPrice =
         discountPercent > 0
-          ? Math.round((originalPrice * (1 - discountPercent / 100)) / 1000) *
-            1000
-          : originalPrice;
+          ? basePrice * (1 - discountPercent / 100)
+          : basePrice;
+      const finalPrice = Math.round(discountedPrice / 1000) * 1000;
 
-      total += finalPrice * item.quantity;
+      totalAmount += finalPrice * item.quantity;
 
       orderDetailsInput.push({
         product_variant_id: variant.product_variant_id,
         quantity: item.quantity,
-        original_price: originalPrice,
+        original_price: basePrice,
         price: finalPrice,
         discount_percent: discountPercent > 0 ? discountPercent : null,
       });
     }
 
+    let discount_amount = 0;
+    let promotion = null;
+
+    if (promotion_code) {
+      promotion = await model.promotions.findOne({
+        where: {
+          code: promotion_code,
+          status: "active",
+          start_date: { [Op.lte]: new Date() },
+          [Op.or]: [{ end_date: null }, { end_date: { [Op.gte]: new Date() } }],
+        },
+        transaction: t,
+      });
+
+      if (!promotion) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ message: "Mã khuyến mãi không hợp lệ hoặc hết hạn" });
+      }
+
+      // Kiểm tra số lượt sử dụng của user
+      const usageCount = await model.promotion_usages.count({
+        where: { promotion_id: promotion.promotion_id },
+        include: [
+          {
+            model: model.orders,
+            as: "order",
+            where: { user_id },
+            attributes: [],
+          },
+        ],
+        transaction: t,
+      });
+
+      if (usageCount >= promotion.usage_per_user) {
+        await t.rollback();
+        return res.status(400).json({ message: "Bạn đã hết lượt dùng mã này" });
+      }
+
+      if (
+        promotion.min_order_value &&
+        totalAmount < Number(promotion.min_order_value)
+      ) {
+        await t.rollback();
+        return res
+          .status(400)
+          .json({ message: "Đơn hàng chưa đủ điều kiện áp dụng mã giảm giá" });
+      }
+
+      if (promotion.discount_type === "fixed") {
+        discount_amount = Number(promotion.value);
+      } else if (promotion.discount_type === "percent") {
+        discount_amount = (totalAmount * Number(promotion.value)) / 100;
+        if (promotion.max_discount) {
+          discount_amount = Math.min(
+            discount_amount,
+            Number(promotion.max_discount)
+          );
+        }
+      }
+
+      totalAmount = Math.max(totalAmount - discount_amount, 0);
+      totalAmount = Math.round(totalAmount / 1000) * 1000; // làm tròn cuối cùng
+    }
+
     const order = await model.orders.create(
       {
         user_id,
-        total,
+        total: totalAmount,
         note,
         received_date: null,
         receiver_name: address.receiver_name,
@@ -305,6 +433,17 @@ const placeCartOrder = async (req, res) => {
       { transaction: t }
     );
 
+    // Tạo promotion_usage nếu có
+    if (promotion) {
+      await model.promotion_usages.create(
+        {
+          promotion_id: promotion.promotion_id,
+          order_id: order.order_id,
+        },
+        { transaction: t }
+      );
+    }
+
     for (const item of cartItems) {
       await model.product_variants.decrement("stock", {
         by: item.quantity,
@@ -318,11 +457,11 @@ const placeCartOrder = async (req, res) => {
       transaction: t,
     });
 
-    await model.payments.create(
+    const payment = await model.payments.create(
       {
         order_id: order.order_id,
         method,
-        total,
+        total: totalAmount,
         status: "đang chờ",
         payment_date: null,
       },
@@ -331,60 +470,38 @@ const placeCartOrder = async (req, res) => {
 
     await t.commit();
 
-    const payment = await model.payments.findOne({
-      where: { order_id: order.order_id },
-    });
-
-    if (method === "COD") {
-      return res.json({
-        message: "Đặt hàng COD thành công",
-        order_id: order.order_id,
-        payment: {
-          payment_id: payment.payment_id,
-          method: payment.method,
-          status: payment.status,
-          total: payment.total,
-        },
-      });
-    }
-
     if (method === "MOMO") {
       try {
         const momoResult = await prepareMomoPayment(order.order_id);
         return res.json({
           message: "Chuyển sang thanh toán MoMo",
           order_id: order.order_id,
-          payment: {
-            payment_id: payment.payment_id,
-            method: payment.method,
-            status: payment.status,
-            total: payment.total,
-          },
+          payment,
+          discount_amount,
           payUrl: momoResult.payUrl,
         });
       } catch (err) {
-        console.error("Lỗi tạo link MoMo → hủy đơn:", err);
         await model.payments.destroy({ where: { order_id: order.order_id } });
         await cancelOrderAndRestoreStock(order.order_id);
-
         return res.status(500).json({
           message:
-            "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hàng tồn kho đã được hoàn lại.",
+            "Lỗi kết nối MoMo. Đơn hàng đã bị hủy và hoàn lại hàng tồn kho.",
         });
       }
     }
 
-    return res
-      .status(400)
-      .json({ message: "Phương thức thanh toán không hỗ trợ" });
+    return res.json({
+      message: "Đặt hàng COD thành công",
+      order_id: order.order_id,
+      payment,
+      discount_amount,
+    });
   } catch (error) {
     if (t && !t.finished) await t.rollback();
     console.error("Lỗi placeCartOrder:", error);
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
 
 const getOrderDetail = async (req, res) => {
   try {
@@ -427,7 +544,6 @@ const getOrderDetail = async (req, res) => {
             "status",
             "payment_date",
           ],
-         
         },
         {
           model: model.order_details,
@@ -455,7 +571,24 @@ const getOrderDetail = async (req, res) => {
               model: model.reviews,
               as: "review",
               attributes: ["review_id"],
-              required: false, 
+              required: false,
+            },
+          ],
+        },
+        {
+          model: model.promotion_usages,
+          as: "promotion_usage",
+          required: false,
+          include: [
+            {
+              model: model.promotions,
+              as: "promotion",
+              attributes: [
+                "promotion_id",
+                "discount_type",
+                "value",
+                "max_discount",
+              ],
             },
           ],
         },
@@ -465,19 +598,43 @@ const getOrderDetail = async (req, res) => {
     if (!order) {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
-    const payments = order.payment || [];
 
-const latestPayment =
-  payments.length > 0
-    ? payments.sort((a, b) => b.payment_id - a.payment_id)[0]
-    : null;
+    const payments = order.payment || [];
+    const latestPayment =
+      payments.length > 0
+        ? payments.sort((a, b) => b.payment_id - a.payment_id)[0]
+        : null;
 
     const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"];
-    if (!allowedFullAccessRoles.includes(role)) {
-      if (order.user_id !== currentUserId) {
-        return res.status(403).json({
-          message: "Bạn không có quyền xem chi tiết đơn hàng của người khác",
-        });
+    if (
+      !allowedFullAccessRoles.includes(role) &&
+      order.user_id !== currentUserId
+    ) {
+      return res.status(403).json({
+        message: "Bạn không có quyền xem chi tiết đơn hàng của người khác",
+      });
+    }
+
+    let discount_amount = 0;
+
+    if (order.promotion_usage && order.promotion_usage.promotion) {
+      const promo = order.promotion_usage.promotion;
+
+      
+      const totalBeforePromo = order.order_details.reduce((sum, item) => {
+        return sum + Number(item.price) * item.quantity;
+      }, 0);
+
+      if (promo.discount_type === "fixed") {
+        discount_amount = Number(promo.value);
+      } else if (promo.discount_type === "percent") {
+        discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
+        if (promo.max_discount) {
+          discount_amount = Math.min(
+            discount_amount,
+            Number(promo.max_discount)
+          );
+        }
       }
     }
 
@@ -487,6 +644,7 @@ const latestPayment =
       status: order.status,
       payment_status: latestPayment?.status || "đang chờ",
       total: Number(order.total),
+      discount_amount,
       note: order.note || null,
       receiver_name: order.receiver_name,
       phone: order.phone,
@@ -504,17 +662,16 @@ const latestPayment =
           }
         : null,
       payments: order.payment
-  ? order.payment.map(p => ({
-      payment_id: p.payment_id,
-      method: p.method,
-      total: Number(p.total),
-      status: p.status,
-      payment_date: p.payment_date
-        ? formatVNDateTime(p.payment_date)
-        : null,
-    }))
-  : [],
-
+        ? order.payment.map((p) => ({
+            payment_id: p.payment_id,
+            method: p.method,
+            total: Number(p.total),
+            status: p.status,
+            payment_date: p.payment_date
+              ? formatVNDateTime(p.payment_date)
+              : null,
+          }))
+        : [],
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
@@ -522,10 +679,7 @@ const latestPayment =
           item.original_price || item.product_variant.product.price
         ),
         price: Number(item.price),
-
-      
         is_review: !!item.review,
-
         product: {
           product_id: item.product_variant.product.product_id,
           name: item.product_variant.product.name,
@@ -551,9 +705,6 @@ const latestPayment =
       .json({ message: "Lỗi server", error: error.message });
   }
 };
-
-
-
 
 const cancelOrder = async (req, res) => {
   const t = await sequelize.transaction();
@@ -592,15 +743,15 @@ const cancelOrder = async (req, res) => {
       });
     }
 
-   
     if (
       order.payment &&
-      order.payment.some((p) => p.method === "MOMO" && p.status === "thành công")
+      order.payment.some(
+        (p) => p.method === "MOMO" && p.status === "thành công"
+      )
     ) {
       await t.rollback();
       return res.status(400).json({
-        message:
-          "Đơn hàng thanh toán bằng MOMO đã thành công, không thể hủy.",
+        message: "Đơn hàng thanh toán bằng MOMO đã thành công, không thể hủy.",
       });
     }
 
@@ -612,10 +763,8 @@ const cancelOrder = async (req, res) => {
       });
     }
 
-    
     await order.update({ status: "đã hủy" }, { transaction: t });
 
-   
     if (order.payment && order.payment.length > 0) {
       for (const p of order.payment) {
         if (p.status !== "thành công") {
@@ -624,13 +773,11 @@ const cancelOrder = async (req, res) => {
       }
     }
 
-   
     await model.reason_cancel.create(
       { order_id: order.order_id, reason: reason.trim() },
       { transaction: t }
     );
 
- 
     for (const detail of order.order_details) {
       await detail.product_variant.increment("stock", {
         by: detail.quantity,
@@ -650,11 +797,6 @@ const cancelOrder = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
-
-
-
-
 
 const getAllOrders = async (req, res) => {
   try {
@@ -713,20 +855,55 @@ const getAllOrders = async (req, res) => {
           as: "payment",
           attributes: ["payment_id", "method", "status", "payment_date"],
         },
+        {
+          model: model.promotion_usages,
+          as: "promotion_usage",
+          include: [
+            {
+              model: model.promotions,
+              as: "promotion",
+              attributes: [
+                "promotion_id",
+                "discount_type",
+                "value",
+                "max_discount",
+              ],
+            },
+          ],
+        },
       ],
     });
 
     const formatted = orders.map((order) => {
-      
       const latestPayment = (order.payment || []).sort(
         (a, b) => b.payment_id - a.payment_id
       )[0];
+
+
+      let discount_amount = 0;
+      const promoUsage = order.promotion_usage;
+      if (promoUsage && promoUsage.promotion) {
+        const promo = promoUsage.promotion;
+        const totalBeforePromo = order.order_details.reduce((sum, item) => {
+          return sum + Number(item.price) * item.quantity;
+        }, 0);
+
+        if (promo.discount_type === "fixed") {
+          discount_amount = Number(promo.value);
+        } else if (promo.discount_type === "percent") {
+          discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
+          if (promo.max_discount) {
+            discount_amount = Math.min(discount_amount, Number(promo.max_discount));
+          }
+        }
+      }
 
       return {
         order_id: order.order_id,
         status: order.status,
         order_date: formatVNDateTime(order.order_date),
         total: parseFloat(order.total || 0),
+        discount_amount,
         receiver_name: order.receiver_name,
         phone: order.phone,
         address_detail: order.address_detail,
@@ -777,6 +954,7 @@ const getAllOrders = async (req, res) => {
   }
 };
 
+
 const updateOrderStatus = async (req, res) => {
   const t = await sequelize.transaction();
   try {
@@ -801,6 +979,20 @@ const updateOrderStatus = async (req, res) => {
     if (!order) {
       await t.rollback();
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
+    }
+
+    const hasMomo = (order.payment || []).some((p) => p.method === "MOMO");
+
+    const momoPaid = (order.payment || []).some(
+      (p) => p.method === "MOMO" && p.status === "thành công"
+    );
+
+    if (hasMomo && !momoPaid) {
+      await t.rollback();
+      return res.status(400).json({
+        message:
+          "Đơn hàng chưa thanh toán MOMO thành công, không thể cập nhật trạng thái",
+      });
     }
 
     const previousStatus = order.status;
@@ -835,7 +1027,6 @@ const updateOrderStatus = async (req, res) => {
       newStatus = allowedTransitions[previousStatus][0];
     }
 
-   
     if (newStatus === "đã giao") {
       order.received_date = new Date();
 
@@ -870,7 +1061,10 @@ const updateOrderStatus = async (req, res) => {
       }
     }
 
-    await order.update({ status: newStatus }, { transaction: t });
+    await order.update(
+      { status: newStatus, received_date: order.received_date },
+      { transaction: t }
+    );
 
     await t.commit();
 
@@ -998,7 +1192,7 @@ const reorderCart = async (req, res) => {
         cart_id: cart.cart_id,
         product_variant_id: variantId,
         product_name: variant.product.name,
-        thumbnail:variant.product.thumbnail,
+        thumbnail: variant.product.thumbnail,
         color: variant.color,
         size: variant.size,
         quantity: cartDetail ? cartDetail.quantity : 1,
@@ -1026,10 +1220,8 @@ const getOrdersByStatus = async (req, res) => {
       return res.status(403).json({ message: "Không có quyền truy cập" });
     }
 
-   
     if (status) userFilter.status = status;
 
-   
     const pageNum = parseInt(page, 10) || 1;
     const pageSize = parseInt(limit, 10) || 10;
 
@@ -1038,7 +1230,6 @@ const getOrdersByStatus = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-   
     const orders = await model.orders.findAll({
       where: userFilter,
       limit: pageSize,
@@ -1056,6 +1247,12 @@ const getOrdersByStatus = async (req, res) => {
             },
           ],
         },
+        {
+          model: model.promotion_usages,
+          as: "promotion_usage",
+          include: [{ model: model.promotions, as: "promotion" }],
+          required: false,
+        },
       ],
     });
 
@@ -1069,37 +1266,46 @@ const getOrdersByStatus = async (req, res) => {
       });
     }
 
-    
     const formatted = orders.map((order) => {
-      const items = order.order_details.map((detail) => {
-        const p = detail.product_variant.product;
-        const priceOriginal = Number(Number(p.price).toFixed(2));
-        const discount = Number(Number(p.discount || 0).toFixed(2));
-        const finalPrice = Number(
-          (priceOriginal * (1 - discount / 100)).toFixed(2)
+      
+      let discount_amount = 0;
+      if (order.promotion_usage && order.promotion_usage.promotion) {
+        const promotion = order.promotion_usage.promotion;
+        const totalBeforePromo = order.order_details.reduce(
+          (sum, d) => sum + Number(d.price) * d.quantity,
+          0
         );
 
-        return {
-          product_id: p.product_id,
-          name: p.name,
-          thumbnail: p.thumbnail,
-          product_variant_id: detail.product_variant_id,
-          color: detail.product_variant.color,
-          size: detail.product_variant.size,
-          sku: detail.product_variant.sku,
-          quantity: detail.quantity,
-          price_original: priceOriginal,
-          discount,
-          final_price: finalPrice,
-        };
-      });
+        if (promotion.discount_type === "fixed") {
+          discount_amount = Number(promotion.value);
+        } else if (promotion.discount_type === "percent") {
+          discount_amount = totalBeforePromo * (Number(promotion.value) / 100);
+          if (promotion.max_discount) {
+            discount_amount = Math.min(discount_amount, Number(promotion.max_discount));
+          }
+        }
+      }
+
+      const items = order.order_details.map((detail) => ({
+        product_id: detail.product_variant.product.product_id,
+        name: detail.product_variant.product.name,
+        thumbnail: detail.product_variant.product.thumbnail,
+        product_variant_id: detail.product_variant.product_variant_id,
+        color: detail.product_variant.color,
+        size: detail.product_variant.size,
+        sku: detail.product_variant.sku,
+        quantity: detail.quantity,
+        price_original: Number(detail.original_price || 0),
+        final_price: Number(detail.price || 0),
+      }));
 
       return {
         order_id: order.order_id,
         user_id: order.user_id,
         status: order.status,
         order_date: formatVNDateTime(order.order_date),
-        total: Number(Number(order.total).toFixed(2)),
+        total: Number(order.total),
+        discount_amount,
         items,
       };
     });
@@ -1116,6 +1322,7 @@ const getOrdersByStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 export {
   placeDirectOrder,
