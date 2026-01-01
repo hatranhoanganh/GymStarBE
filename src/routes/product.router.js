@@ -18,6 +18,7 @@ import {
   getProductsByStatus,
   deleteProduct,
   getProductByCategory,
+  deleteSize,
 } from "../controllers/product.controller.js";
 
 
@@ -74,6 +75,8 @@ ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProduct);
   ProductRouter.delete("/XoaBienThe/:product_id/:color",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProductVariant);
+    ProductRouter.delete("/XoaSize/:product_variant_id",  verifyToken,
+  requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteSize);
 
 //không cần phân quyền
 ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);

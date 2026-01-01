@@ -2185,6 +2185,62 @@ const getProductByCategory = async (req, res) => {
     });
   }
 };
+const deleteSize = async (req, res) => {
+  const t = await sequelize.transaction();
+  try {
+    const { product_variant_id } = req.params;
+
+    if (!product_variant_id) {
+      return res.status(400).json({ message: "Thiếu product_variant_id" });
+    }
+
+   
+    const variant = await model.product_variants.findByPk(product_variant_id, {
+      transaction: t,
+    });
+
+    if (!variant) {
+      await t.rollback();
+      return res.status(404).json({ message: "Size sản phẩm không tồn tại" });
+    }
+
+    
+    const usedInOrder = await model.order_details.findOne({
+      where: { product_variant_id },
+      transaction: t,
+    });
+
+    if (usedInOrder) {
+      await t.rollback();
+      return res.status(400).json({
+        message: "Không thể xóa size này vì đã tồn tại trong đơn hàng",
+      });
+    }
+
+
+    await model.cart_details.destroy({
+      where: { product_variant_id },
+      transaction: t,
+    });
+
+
+    await model.product_variants.destroy({
+      where: { product_variant_id },
+      transaction: t,
+    });
+
+    await t.commit();
+
+    return res.json({
+      message: "Xóa size sản phẩm thành công",
+      product_variant_id,
+    });
+  } catch (error) {
+    if (t && !t.finished) await t.rollback();
+    console.error("Lỗi deleteProductVariant:", error);
+    return res.status(500).json({ message: "Lỗi server" });
+  }
+};
 
 export {
   addFullProduct,
@@ -2202,4 +2258,5 @@ export {
   getProductsByStatus,
   deleteProduct,
   getProductByCategory,
+  deleteSize,
 };
