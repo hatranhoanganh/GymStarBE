@@ -660,17 +660,38 @@ const updateFullProduct = async (req, res) => {
     }
 
   
-    if (spec !== undefined && spec !== "") {
-      let specArray = [];
-      try {
-        const parsed = JSON.parse(spec);
-        if (!Array.isArray(parsed)) return sendError("Spec phải là mảng JSON");
-        specArray = parsed.map((s) => normalizeText(s));
-      } catch {
-        return sendError("Spec không hợp lệ");
+  if (spec !== undefined && spec !== "") {
+  let specArray = [];
+  try {
+    const parsed = JSON.parse(spec);
+    if (!Array.isArray(parsed))
+      return sendError("Spec phải là mảng JSON");
+
+    specArray = parsed.map((item) => {
+      if (typeof item === "string") {
+        return normalizeText(item);
       }
-      product.spec = specArray;
-    }
+
+      if (
+        typeof item === "object" &&
+        item.label &&
+        item.value
+      ) {
+        return {
+          label: normalizeText(item.label),
+          value: normalizeText(item.value),
+        };
+      }
+
+      return sendError("Spec có phần tử không hợp lệ");
+    });
+  } catch {
+    return sendError("Spec không hợp lệ");
+  }
+
+  product.spec = specArray;
+}
+
 
    
     if (product_variants !== undefined) {
