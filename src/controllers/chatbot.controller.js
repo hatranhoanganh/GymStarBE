@@ -4,12 +4,9 @@ import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 import { detectIntent } from "../utils/detectIntent.js";
 
-
 const model = initModels(sequelize);
 dotenv.config();
-const HF_API_URL =
-  "https://router.huggingface.co/v1/chat/completions";
-
+const HF_API_URL = "https://router.huggingface.co/v1/chat/completions";
 
 export const chatbot = async (req, res) => {
   try {
@@ -23,7 +20,6 @@ export const chatbot = async (req, res) => {
     let context = "";
     let relatedProducts = [];
 
-    
     if (["PRICE", "SIZE", "COLOR", "STOCK"].includes(intent)) {
       const products = await model.products.findAll({
         include: [
@@ -49,7 +45,9 @@ export const chatbot = async (req, res) => {
           const variants = p.product_variants
             .map(
               (v) =>
-                `- Màu ${v.color}, Size ${v.size}, Giá ${v.price.toLocaleString()}đ, Tồn kho ${v.stock}`
+                `- Màu ${v.color}, Size ${
+                  v.size
+                }, Giá ${v.price.toLocaleString()}đ, Tồn kho ${v.stock}`
             )
             .join("\n");
 
@@ -57,7 +55,6 @@ export const chatbot = async (req, res) => {
         })
         .join("\n\n");
     }
-
 
     if (intent === "PROMOTION") {
       const promotions = await model.promotions.findAll({
@@ -76,7 +73,6 @@ export const chatbot = async (req, res) => {
         : "Hiện không có khuyến mãi.";
     }
 
-
     if (intent === "ORDER" && user_id) {
       const orders = await model.orders.findAll({
         where: { user_id },
@@ -87,7 +83,9 @@ export const chatbot = async (req, res) => {
         ? orders
             .map(
               (o) =>
-                `Đơn #${o.order_id}: Trạng thái ${o.status}, Tổng ${o.total.toLocaleString()}đ`
+                `Đơn #${o.order_id}: Trạng thái ${
+                  o.status
+                }, Tổng ${o.total.toLocaleString()}đ`
             )
             .join("\n")
         : "Bạn chưa có đơn hàng nào.";
@@ -102,7 +100,6 @@ Quy định huỷ / đổi trả:
       `;
     }
 
-    
     const prompt = `
 Bạn là chatbot cho website bán quần áo.
 
@@ -121,39 +118,35 @@ ${message}
 TRẢ LỜI:
 `;
 
-    
- const hfRes = await axios.post(
-  HF_API_URL,
-  {
-    model: "meta-llama/Meta-Llama-3-8B-Instruct",
-    messages: [
+    const hfRes = await axios.post(
+      HF_API_URL,
       {
-        role: "user",
-        content: prompt,
+        model: "meta-llama/Meta-Llama-3-8B-Instruct",
+        messages: [
+          {
+            role: "user",
+            content: prompt,
+          },
+        ],
+        temperature: 0.2,
+        max_tokens: 300,
       },
-    ],
-    temperature: 0.2,
-    max_tokens: 300,
-  },
-  {
-    headers: {
-      Authorization: `Bearer ${process.env.HF_API_KEY}`,
-      "Content-Type": "application/json",
-    },
-    timeout: 60000,
-  }
-);
-
-
-
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.HF_API_KEY}`,
+          "Content-Type": "application/json",
+        },
+        timeout: 60000,
+      }
+    );
 
     const answer =
-  hfRes.data?.choices?.[0]?.message?.content ||
-  "Xin lỗi, tôi chưa có thông tin phù hợp.";
+      hfRes.data?.choices?.[0]?.message?.content ||
+      "Xin lỗi, tôi chưa có thông tin phù hợp.";
 
     return res.json({
       answer,
-      products: relatedProducts, 
+      products: relatedProducts,
     });
   } catch (error) {
     console.error(error.response?.data || error.message);

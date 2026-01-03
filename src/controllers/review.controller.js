@@ -592,7 +592,6 @@ const getReviewsByUser = async (req, res) => {
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
 
-   
     const total = await model.reviews.count({
       include: [
         {
@@ -626,7 +625,6 @@ const getReviewsByUser = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
- 
     const reviews = await model.reviews.findAll({
       include: [
         {
@@ -648,6 +646,7 @@ const getReviewsByUser = async (req, res) => {
                 "color",
                 "size",
                 "sku",
+                "price", 
               ],
               include: [
                 {
@@ -657,7 +656,6 @@ const getReviewsByUser = async (req, res) => {
                     "product_id",
                     "name",
                     "thumbnail",
-                    "price",
                   ],
                 },
               ],
@@ -687,7 +685,6 @@ const getReviewsByUser = async (req, res) => {
       distinct: true,
     });
 
-   
     const data = reviews.map((r) => ({
       review_id: r.review_id,
       rating: r.rating,
@@ -698,35 +695,35 @@ const getReviewsByUser = async (req, res) => {
 
       product: r.order_detail?.product_variant?.product
         ? {
-          product_id:
-            r.order_detail.product_variant.product.product_id,
-          product_name:
-            r.order_detail.product_variant.product.name,
-          thumbnail:
-            r.order_detail.product_variant.product.thumbnail,
-          price:
-            r.order_detail.product_variant.product.price,
-        }
+            product_id:
+              r.order_detail.product_variant.product.product_id,
+            product_name:
+              r.order_detail.product_variant.product.name,
+            thumbnail:
+              r.order_detail.product_variant.product.thumbnail,
+            price:
+              r.order_detail.product_variant.price, 
+          }
         : null,
 
       variant: r.order_detail?.product_variant
         ? {
-          product_variant_id:
-            r.order_detail.product_variant.product_variant_id,
-          color: r.order_detail.product_variant.color,
-          size: r.order_detail.product_variant.size,
-          sku: r.order_detail.product_variant.sku,
-        }
+            product_variant_id:
+              r.order_detail.product_variant.product_variant_id,
+            color: r.order_detail.product_variant.color,
+            size: r.order_detail.product_variant.size,
+            sku: r.order_detail.product_variant.sku,
+          }
         : null,
 
       reply: r.review_reply
         ? {
-          message: r.review_reply.message,
-          replied_at: formatVNDateTime(
-            r.review_reply.replied_at
-          ),
-          replier: r.review_reply.user,
-        }
+            message: r.review_reply.message,
+            replied_at: formatVNDateTime(
+              r.review_reply.replied_at
+            ),
+            replier: r.review_reply.user,
+          }
         : null,
     }));
 
@@ -742,6 +739,7 @@ const getReviewsByUser = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 export {

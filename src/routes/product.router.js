@@ -11,11 +11,9 @@ import {
   getActiveProducts,
   getNewProductsLast2Days,
   getProductDetail,
-  getProductByKeyWordAdmin,
   getProductByKeyWordUser,
   updateProductStatus,
   addFullProduct,
-  getProductsByStatus,
   deleteProduct,
   getProductByCategory,
   deleteSize,
@@ -61,16 +59,9 @@ ProductRouter.post("/ThemSize/:product_id/:color",  verifyToken,
 
 ProductRouter.get("/LayTatCaSanPhamAdmin",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),getAllProducts);
-ProductRouter.get(
-  "/LayDanhSachSanPhamTheoTuKhoaAdmin", verifyToken,
-  requireRole("Quản trị viên", "Quản lý sản phẩm"),
-  getProductByKeyWordAdmin
-);
 
 ProductRouter.put("/CapNhatTrangThaiSanPham/:product_id",  verifyToken,
   requireRole("Quản trị viên"),updateProductStatus);
-ProductRouter.get("/LayDanhSachSanPhamTheoTrangThai",  verifyToken,
-  requireRole("Quản trị viên", "Quản lý sản phẩm"),getProductsByStatus);
 ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteProduct);
   ProductRouter.delete("/XoaBienThe/:product_id/:color",  verifyToken,
