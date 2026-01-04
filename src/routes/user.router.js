@@ -13,8 +13,6 @@ import {
   verifyOTP,
   resetPassword,
   updateStatus,
-  getUserByKeyword,
-  getUsersByStatus,
   assignUserRole, 
   getAllRoles,
   createRole,
@@ -26,8 +24,7 @@ import { forgotPasswordLimiter } from "../middleware/rateLimit.js";
 const userRouter = express.Router();
 //trừ khách hàng
 userRouter.get("/LayDanhSachNguoiDung", verifyToken,requireRoleExcept("Khách hàng"),getAllUsers);
-userRouter.get("/LayThongTinTaiKhoanTheoKeyWord",verifyToken,requireRoleExcept("Khách hàng"),  getUserByKeyword);
-userRouter.get("/LayThongTinTaiKhoanTheoStatus",verifyToken,requireRoleExcept("Khách hàng"),  getUsersByStatus);
+
 
 //không cần phân quyền
 userRouter.post("/DangKy", registerUser);

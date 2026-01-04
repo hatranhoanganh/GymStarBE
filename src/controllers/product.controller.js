@@ -1317,11 +1317,11 @@ const getNewProductsLast2Days = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-    // ⏱ Mốc thời gian: 2 ngày trước
+    // Mốc thời gian: 2 ngày trước
     const twoDaysAgo = new Date();
     twoDaysAgo.setDate(twoDaysAgo.getDate() - 2);
 
-    // 🔢 Đếm tổng
+   
     const total = await model.products.count({
       where: {
         status: "đang bán",
@@ -1360,7 +1360,6 @@ const getNewProductsLast2Days = async (req, res) => {
         "name",
         "description",
         "discount",
-        "price",
         "spec",
         "thumbnail",
         "status",
@@ -1384,7 +1383,7 @@ const getNewProductsLast2Days = async (req, res) => {
         {
           model: model.product_variants,
           as: "product_variants",
-          attributes: ["product_variant_id", "color", "size", "stock", "sku"],
+          attributes: ["product_variant_id", "color", "size","price", "stock", "sku"],
         },
         {
           model: model.product_images,
@@ -1395,7 +1394,7 @@ const getNewProductsLast2Days = async (req, res) => {
       nest: true,
     });
 
-    // 🔄 Format data (GIỮ NGUYÊN LOGIC CŨ)
+   
     const formattedData = products.map((p) => {
       const colors = {};
       p.product_images.forEach((img) => {
@@ -1410,7 +1409,6 @@ const getNewProductsLast2Days = async (req, res) => {
         name: p.name,
         description: p.description,
         discount: p.discount,
-        price: p.price,
         spec: p.spec || null,
         thumbnail: p.thumbnail,
         status: p.status,
@@ -1423,6 +1421,7 @@ const getNewProductsLast2Days = async (req, res) => {
           product_variant_id: v.product_variant_id,
           color: v.color,
           size: v.size,
+          price:v.price,
           stock: v.stock,
           sku: v.sku,
         })),
@@ -1485,7 +1484,6 @@ const getProductByKeyWordUser = async (req, res) => {
         "name",
         "description",
         "discount",
-        "price",
         "spec",
         "status",
         "thumbnail",
@@ -1505,7 +1503,7 @@ const getProductByKeyWordUser = async (req, res) => {
         {
           model: model.product_variants,
           as: "product_variants",
-          attributes: ["product_variant_id", "sku", "color", "size", "stock"],
+          attributes: ["product_variant_id", "sku", "color", "size", "price", "stock"],
           required: false,
         },
         {
@@ -1534,7 +1532,6 @@ const getProductByKeyWordUser = async (req, res) => {
         name: p.name,
         description: p.description,
         discount: p.discount,
-        price: p.price,
         spec: p.spec || null,
         status: p.status,
         thumbnail: p.thumbnail,
