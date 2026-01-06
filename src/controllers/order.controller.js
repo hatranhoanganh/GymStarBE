@@ -14,8 +14,6 @@ const model = initModels(sequelize);
 const placeDirectOrder = async (req, res) => {
   let t;
   try {
-    t = await sequelize.transaction();
-
     const user_id = req.user.user_id;
     const {
       product_variant_id,
@@ -26,14 +24,20 @@ const placeDirectOrder = async (req, res) => {
       promotion_code,
     } = req.body;
 
+  
     if (!product_variant_id || !method)
       return res.status(400).json({ message: "Thiếu thông tin bắt buộc" });
 
     const finalQuantity = parseInt(quantity);
     if (isNaN(finalQuantity) || finalQuantity < 1)
       return res.status(400).json({ message: "Số lượng không hợp lệ hoặc <1" });
+
     if (finalQuantity > 10)
       return res.status(400).json({ message: "Số lượng tối đa là 10" });
+
+    
+    t = await sequelize.transaction();
+
 
     const address = address_id
       ? await model.user_addresses.findOne({
@@ -45,45 +49,83 @@ const placeDirectOrder = async (req, res) => {
           transaction: t,
         });
 
-    if (!address)
+    if (!address) {
+      await t.rollback();
       return res.status(400).json({ message: "Địa chỉ không tồn tại" });
+    }
 
+  
     const variant = await model.product_variants.findOne({
       where: { product_variant_id },
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
-    if (!variant)
+
+    if (!variant) {
+      await t.rollback();
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
-    if (variant.stock < finalQuantity)
-      return res
-        .status(400)
-        .json({ message: "Hết hàng hoặc không đủ số lượng" });
+    }
+
 
     const product = await model.products.findByPk(variant.product_id, {
       transaction: t,
     });
-    if (!product)
-      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
 
+    if (!product) {
+      await t.rollback();
+      return res.status(404).json({ message: "Sản phẩm không tồn tại" });
+    }
+
+    if (product.status !== "đang bán") {
+      await t.rollback();
+      return res.status(400).json({
+        message: "Sản phẩm hiện không được phép đặt hàng",
+      });
+    }
+
+  
+    if (variant.stock === 0) {
+      await t.rollback();
+      return res.status(400).json({
+        message: "Sản phẩm đã hết hàng",
+      });
+    }
+
+    if (variant.stock < finalQuantity) {
+      await t.rollback();
+      return res.status(400).json({
+        message: `Chỉ còn ${variant.stock} sản phẩm trong kho`,
+        available_stock: variant.stock,
+      });
+    }
+
+ 
     const basePrice = Number(variant.price);
-    const discountPercent = product.discount ? parseFloat(product.discount) : 0;
+    const discountPercent = product.discount
+      ? parseFloat(product.discount)
+      : 0;
+
     const discountedPrice =
-      discountPercent > 0 ? basePrice * (1 - discountPercent / 100) : basePrice;
+      discountPercent > 0
+        ? basePrice * (1 - discountPercent / 100)
+        : basePrice;
+
     const finalPrice = Math.round(discountedPrice / 1000) * 1000;
 
     let totalAmount = finalPrice * finalQuantity;
     let discount_amount = 0;
     let promotion = null;
 
-    // Xử lý mã khuyến mãi nếu có
     if (promotion_code) {
       promotion = await model.promotions.findOne({
         where: {
           code: promotion_code,
           status: "active",
           start_date: { [Op.lte]: new Date() },
-          [Op.or]: [{ end_date: null }, { end_date: { [Op.gte]: new Date() } }],
+          [Op.or]: [
+            { end_date: null },
+            { end_date: { [Op.gte]: new Date() } },
+          ],
         },
         transaction: t,
       });
@@ -95,7 +137,6 @@ const placeDirectOrder = async (req, res) => {
           .json({ message: "Mã khuyến mãi không hợp lệ hoặc hết hạn" });
       }
 
-      // Kiểm tra số lượt sử dụng của user
       const usageCount = await model.promotion_usages.count({
         where: { promotion_id: promotion.promotion_id },
         include: [
@@ -111,7 +152,9 @@ const placeDirectOrder = async (req, res) => {
 
       if (usageCount >= promotion.usage_per_user) {
         await t.rollback();
-        return res.status(400).json({ message: "Bạn đã hết lượt dùng mã này" });
+        return res.status(400).json({
+          message: "Bạn đã hết lượt dùng mã này",
+        });
       }
 
       if (
@@ -119,9 +162,9 @@ const placeDirectOrder = async (req, res) => {
         totalAmount < Number(promotion.min_order_value)
       ) {
         await t.rollback();
-        return res
-          .status(400)
-          .json({ message: "Đơn hàng chưa đủ điều kiện áp dụng mã giảm giá" });
+        return res.status(400).json({
+          message: "Đơn hàng chưa đủ điều kiện áp dụng mã giảm giá",
+        });
       }
 
       if (promotion.discount_type === "fixed") {
@@ -137,10 +180,10 @@ const placeDirectOrder = async (req, res) => {
       }
 
       totalAmount = Math.max(totalAmount - discount_amount, 0);
-      totalAmount = Math.round(totalAmount / 1000) * 1000; // làm tròn cuối cùng
+      totalAmount = Math.round(totalAmount / 1000) * 1000;
     }
 
-    // Tạo đơn hàng
+ 
     const newOrder = await model.orders.create(
       {
         user_id,
@@ -167,7 +210,6 @@ const placeDirectOrder = async (req, res) => {
       { transaction: t }
     );
 
-    // Tạo promotion_usage nếu có
     if (promotion) {
       await model.promotion_usages.create(
         {
@@ -197,6 +239,7 @@ const placeDirectOrder = async (req, res) => {
 
     await t.commit();
 
+    
     if (method === "MOMO") {
       try {
         const momoResult = await prepareMomoPayment(newOrder.order_id);
@@ -232,6 +275,7 @@ const placeDirectOrder = async (req, res) => {
   }
 };
 
+
 const placeCartOrder = async (req, res) => {
   let t;
   try {
@@ -266,7 +310,6 @@ const placeCartOrder = async (req, res) => {
         });
 
     if (!address) {
-      await t.rollback();
       return res.status(400).json({ message: "Chưa có địa chỉ giao hàng" });
     }
 
@@ -296,7 +339,7 @@ const placeCartOrder = async (req, res) => {
             {
               model: model.products,
               as: "product",
-              attributes: ["name", "discount", "thumbnail"],
+              attributes: ["name", "discount", "thumbnail", "status"],
             },
           ],
         },
@@ -305,7 +348,6 @@ const placeCartOrder = async (req, res) => {
     });
 
     if (cartItems.length === 0) {
-      await t.rollback();
       return res
         .status(404)
         .json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
@@ -316,14 +358,39 @@ const placeCartOrder = async (req, res) => {
 
     for (const item of cartItems) {
       const variant = item.product_variant;
-      const product = variant.product;
+      const product = variant?.product;
 
-      if (!variant || variant.stock < item.quantity) {
-        await t.rollback();
+    
+      if (!variant || !product) {
+        return res.status(404).json({
+          message: "Sản phẩm không tồn tại",
+          product_variant_id: item.product_variant_id,
+        });
+      }
+
+     
+      if (product.status !== "đang bán") {
+        return res.status(400).json({
+          message: `Sản phẩm "${product.name}" hiện đã ngưng bán`,
+        });
+      }
+
+      
+      if (variant.stock === 0) {
         return res.status(400).json({
           message: `Sản phẩm "${product.name}" (${variant.color || ""} ${
             variant.size || ""
-          }) không đủ hàng`,
+          }) đã hết hàng`,
+        });
+      }
+
+    
+      if (variant.stock < item.quantity) {
+        return res.status(400).json({
+          message: `Sản phẩm "${product.name}" (${variant.color || ""} ${
+            variant.size || ""
+          }) chỉ còn ${variant.stock} sản phẩm`,
+          available_stock: variant.stock,
         });
       }
 
@@ -331,10 +398,12 @@ const placeCartOrder = async (req, res) => {
       const discountPercent = product.discount
         ? parseFloat(product.discount)
         : 0;
+
       const discountedPrice =
         discountPercent > 0
           ? basePrice * (1 - discountPercent / 100)
           : basePrice;
+
       const finalPrice = Math.round(discountedPrice / 1000) * 1000;
 
       totalAmount += finalPrice * item.quantity;
@@ -344,7 +413,7 @@ const placeCartOrder = async (req, res) => {
         quantity: item.quantity,
         original_price: basePrice,
         price: finalPrice,
-        discount_percent: discountPercent > 0 ? discountPercent : null,
+        discount: discountPercent > 0 ? discountPercent : null,
       });
     }
 
@@ -363,13 +432,11 @@ const placeCartOrder = async (req, res) => {
       });
 
       if (!promotion) {
-        await t.rollback();
         return res
           .status(400)
           .json({ message: "Mã khuyến mãi không hợp lệ hoặc hết hạn" });
       }
 
-      // Kiểm tra số lượt sử dụng của user
       const usageCount = await model.promotion_usages.count({
         where: { promotion_id: promotion.promotion_id },
         include: [
@@ -384,7 +451,6 @@ const placeCartOrder = async (req, res) => {
       });
 
       if (usageCount >= promotion.usage_per_user) {
-        await t.rollback();
         return res.status(400).json({ message: "Bạn đã hết lượt dùng mã này" });
       }
 
@@ -392,7 +458,6 @@ const placeCartOrder = async (req, res) => {
         promotion.min_order_value &&
         totalAmount < Number(promotion.min_order_value)
       ) {
-        await t.rollback();
         return res
           .status(400)
           .json({ message: "Đơn hàng chưa đủ điều kiện áp dụng mã giảm giá" });
@@ -411,7 +476,7 @@ const placeCartOrder = async (req, res) => {
       }
 
       totalAmount = Math.max(totalAmount - discount_amount, 0);
-      totalAmount = Math.round(totalAmount / 1000) * 1000; // làm tròn cuối cùng
+      totalAmount = Math.round(totalAmount / 1000) * 1000;
     }
 
     const order = await model.orders.create(
@@ -433,7 +498,6 @@ const placeCartOrder = async (req, res) => {
       { transaction: t }
     );
 
-    // Tạo promotion_usage nếu có
     if (promotion) {
       await model.promotion_usages.create(
         {
@@ -503,6 +567,7 @@ const placeCartOrder = async (req, res) => {
   }
 };
 
+
 const getOrderDetail = async (req, res) => {
   try {
     const { order_id } = req.params;
@@ -513,6 +578,7 @@ const getOrderDetail = async (req, res) => {
 
     const role = req.user.role_name;
     const currentUserId = req.user.user_id;
+
 
     const order = await model.orders.findOne({
       where: { order_id },
@@ -537,23 +603,12 @@ const getOrderDetail = async (req, res) => {
         {
           model: model.payments,
           as: "payment",
-          attributes: [
-            "payment_id",
-            "method",
-            "total",
-            "status",
-            "payment_date",
-          ],
+          attributes: ["payment_id", "method", "total", "status", "payment_date"],
         },
         {
           model: model.order_details,
           as: "order_details",
-          attributes: [
-            "order_detail_id",
-            "quantity",
-            "price",
-            "original_price",
-          ],
+          attributes: ["order_detail_id", "quantity", "price", "original_price"],
           include: [
             {
               model: model.product_variants,
@@ -583,12 +638,7 @@ const getOrderDetail = async (req, res) => {
             {
               model: model.promotions,
               as: "promotion",
-              attributes: [
-                "promotion_id",
-                "discount_type",
-                "value",
-                "max_discount",
-              ],
+              attributes: ["promotion_id", "discount_type", "value", "max_discount"],
             },
           ],
         },
@@ -599,28 +649,34 @@ const getOrderDetail = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
 
-    const payments = order.payment || [];
+    
+    const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
+    const expired = Date.now() - order.order_date.getTime() > 15 * 60 * 1000;
+
+    if (expired && !isPaid && order.status === "chờ xác nhận") {
+      await cancelOrderAndRestoreStock(order.order_id);
+      return res.status(400).json({
+        message: "Đơn hàng MoMo đã hết hạn 15 phút và đã bị hủy.",
+      });
+    }
+    
+
     const latestPayment =
-      payments.length > 0
-        ? payments.sort((a, b) => b.payment_id - a.payment_id)[0]
+      order.payment && order.payment.length > 0
+        ? order.payment.sort((a, b) => b.payment_id - a.payment_id)[0]
         : null;
 
     const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"];
-    if (
-      !allowedFullAccessRoles.includes(role) &&
-      order.user_id !== currentUserId
-    ) {
+    if (!allowedFullAccessRoles.includes(role) && order.user_id !== currentUserId) {
       return res.status(403).json({
         message: "Bạn không có quyền xem chi tiết đơn hàng của người khác",
       });
     }
 
     let discount_amount = 0;
-
     if (order.promotion_usage && order.promotion_usage.promotion) {
       const promo = order.promotion_usage.promotion;
 
-      
       const totalBeforePromo = order.order_details.reduce((sum, item) => {
         return sum + Number(item.price) * item.quantity;
       }, 0);
@@ -630,10 +686,7 @@ const getOrderDetail = async (req, res) => {
       } else if (promo.discount_type === "percent") {
         discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
         if (promo.max_discount) {
-          discount_amount = Math.min(
-            discount_amount,
-            Number(promo.max_discount)
-          );
+          discount_amount = Math.min(discount_amount, Number(promo.max_discount));
         }
       }
     }
@@ -649,9 +702,7 @@ const getOrderDetail = async (req, res) => {
       receiver_name: order.receiver_name,
       phone: order.phone,
       address_detail: order.address_detail,
-      received_date: order.received_date
-        ? formatVNDateTime(order.received_date)
-        : null,
+      received_date: order.received_date ? formatVNDateTime(order.received_date) : null,
       user: order.user
         ? {
             user_id: order.user.user_id,
@@ -667,17 +718,13 @@ const getOrderDetail = async (req, res) => {
             method: p.method,
             total: Number(p.total),
             status: p.status,
-            payment_date: p.payment_date
-              ? formatVNDateTime(p.payment_date)
-              : null,
+            payment_date: p.payment_date ? formatVNDateTime(p.payment_date) : null,
           }))
         : [],
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
-        original_price: Number(
-          item.original_price || item.product_variant.product.price
-        ),
+        original_price: Number(item.original_price || item.product_variant.product.price),
         price: Number(item.price),
         is_review: !!item.review,
         product: {
@@ -700,11 +747,10 @@ const getOrderDetail = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi getOrderDetail:", error);
-    return res
-      .status(500)
-      .json({ message: "Lỗi server", error: error.message });
+    return res.status(500).json({ message: "Lỗi server", error: error.message });
   }
 };
+
 
 const cancelOrder = async (req, res) => {
   const t = await sequelize.transaction();
@@ -879,7 +925,6 @@ const getAllOrders = async (req, res) => {
         (a, b) => b.payment_id - a.payment_id
       )[0];
 
-
       let discount_amount = 0;
       const promoUsage = order.promotion_usage;
       if (promoUsage && promoUsage.promotion) {
@@ -893,7 +938,10 @@ const getAllOrders = async (req, res) => {
         } else if (promo.discount_type === "percent") {
           discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
           if (promo.max_discount) {
-            discount_amount = Math.min(discount_amount, Number(promo.max_discount));
+            discount_amount = Math.min(
+              discount_amount,
+              Number(promo.max_discount)
+            );
           }
         }
       }
@@ -953,7 +1001,6 @@ const getAllOrders = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
 
 const updateOrderStatus = async (req, res) => {
   const t = await sequelize.transaction();
@@ -1091,6 +1138,7 @@ const reorderCart = async (req, res) => {
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
     }
 
+    
     const orderDetail = await model.order_details.findOne({
       where: { order_detail_id },
       include: [
@@ -1108,9 +1156,7 @@ const reorderCart = async (req, res) => {
             {
               model: model.products,
               as: "product",
-              where: { status: "đang bán" },
-              attributes: ["product_id", "name", "thumbnail"],
-              required: true,
+              attributes: ["product_id", "name", "thumbnail", "status"],
             },
           ],
         },
@@ -1124,29 +1170,47 @@ const reorderCart = async (req, res) => {
       });
     }
 
+   
     const allowedStatuses = ["đã giao", "giao thất bại", "đã hủy", "đổi hàng"];
-
     if (!allowedStatuses.includes(orderDetail.order.status)) {
       return res.status(400).json({
         message: "Chỉ được mua lại sản phẩm từ đơn đã hoàn tất hoặc bị hủy",
       });
     }
 
-    if (!orderDetail.product_variant) {
+    const variant = orderDetail.product_variant;
+
+   
+    if (!variant) {
       return res.status(400).json({
-        message: "Sản phẩm không còn tồn tại hoặc đã ngừng bán",
+        message: "Sản phẩm không còn tồn tại",
       });
     }
 
-    const variant = orderDetail.product_variant;
-    const stock = Number(variant.stock ?? 0);
+ 
+    const product = variant.product;
+    if (!product) {
+      return res.status(400).json({
+        message: "Sản phẩm khôn còn tồn tại",
+      });
+    }
 
+  
+    if (product.status !== "đang bán") {
+      return res.status(400).json({
+        message: "Sản phẩm hiện đã ngưng bán",
+      });
+    }
+
+   
+    const stock = Number(variant.stock ?? 0);
     if (stock <= 0) {
       return res.status(400).json({
-        message: "Sản phẩm đã hết hàng",
+        message: "Sản phẩm hiện đã hết hàng",
       });
     }
 
+   
     let cart = await model.carts.findOne({ where: { user_id } });
     if (!cart) {
       cart = await model.carts.create({ user_id });
@@ -1155,10 +1219,7 @@ const reorderCart = async (req, res) => {
     const variantId = variant.product_variant_id;
 
     let cartDetail = await model.cart_details.findOne({
-      where: {
-        cart_id: cart.cart_id,
-        product_variant_id: variantId,
-      },
+      where: { cart_id: cart.cart_id, product_variant_id: variantId },
     });
 
     if (cartDetail) {
@@ -1179,7 +1240,7 @@ const reorderCart = async (req, res) => {
       cartDetail.quantity = newQuantity;
       await cartDetail.save();
     } else {
-      await model.cart_details.create({
+      cartDetail = await model.cart_details.create({
         cart_id: cart.cart_id,
         product_variant_id: variantId,
         quantity: 1,
@@ -1191,11 +1252,11 @@ const reorderCart = async (req, res) => {
       data: {
         cart_id: cart.cart_id,
         product_variant_id: variantId,
-        product_name: variant.product.name,
-        thumbnail: variant.product.thumbnail,
+        product_name: product.name,
+        thumbnail: product.thumbnail,
         color: variant.color,
         size: variant.size,
-        quantity: cartDetail ? cartDetail.quantity : 1,
+        quantity: cartDetail.quantity,
       },
     });
   } catch (error) {
@@ -1203,6 +1264,7 @@ const reorderCart = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 const getOrdersByStatus = async (req, res) => {
   try {
     const { status, page = 1, limit = 10, user_id: queryUserId } = req.query;
@@ -1253,6 +1315,11 @@ const getOrdersByStatus = async (req, res) => {
           include: [{ model: model.promotions, as: "promotion" }],
           required: false,
         },
+        {
+          model: model.payments,
+          as: "payment",
+          attributes: ["payment_id", "method", "status", "payment_date"],
+        },
       ],
     });
 
@@ -1266,8 +1333,22 @@ const getOrdersByStatus = async (req, res) => {
       });
     }
 
-    const formatted = orders.map((order) => {
-      
+    const now = Date.now();
+
+    const formatted = [];
+
+    for (const order of orders) {
+     
+      const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
+      const expired = now - order.order_date.getTime() > 15 * 60 * 1000;
+
+      if (expired && !isPaid && order.status === "chờ xác nhận") {
+        await cancelOrderAndRestoreStock(order.order_id);
+       
+        
+      }
+    
+
       let discount_amount = 0;
       if (order.promotion_usage && order.promotion_usage.promotion) {
         const promotion = order.promotion_usage.promotion;
@@ -1299,7 +1380,7 @@ const getOrdersByStatus = async (req, res) => {
         final_price: Number(detail.price || 0),
       }));
 
-      return {
+      formatted.push({
         order_id: order.order_id,
         user_id: order.user_id,
         status: order.status,
@@ -1307,8 +1388,8 @@ const getOrdersByStatus = async (req, res) => {
         total: Number(order.total),
         discount_amount,
         items,
-      };
-    });
+      });
+    }
 
     return res.status(200).json({
       message: "Lấy danh sách đơn hàng thành công",

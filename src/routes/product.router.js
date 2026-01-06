@@ -8,8 +8,7 @@ import {
   getAllProducts,
   updateFullProduct,
   deleteProductVariant,
-  getActiveProducts,
-  getNewProductsLast2Days,
+  getNewProductsLastDays,
   getProductDetail,
   getProductByKeyWordUser,
   updateProductStatus,
@@ -17,6 +16,8 @@ import {
   deleteProduct,
   getProductByCategory,
   deleteSize,
+  getDiscountProducts,
+  getBestSellingProducts,
 } from "../controllers/product.controller.js";
 
 
@@ -70,11 +71,12 @@ ProductRouter.delete("/XoaSanPham/:product_id",  verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"),deleteSize);
 
 //không cần phân quyền
-ProductRouter.get("/LayTatCaSanPhamUser", getActiveProducts);
-ProductRouter.get("/LayTatCaSanPhamMoiTao2Ngay", getNewProductsLast2Days);
+ProductRouter.get("/LayTatCaSanPhamMoiTao", getNewProductsLastDays);
 ProductRouter.get("/LayChiTietSanPham/:product_id", getProductDetail);
 ProductRouter.get("/LayDanhSachSanPhamTheoTuKhoaUser", getProductByKeyWordUser);
 ProductRouter.get("/LaySanPhamTheoDanhMuc/:category_id", getProductByCategory);
+ProductRouter.get("/LayDanhSachSanPhamDangGiamGia", getDiscountProducts);
+ProductRouter.get("/LayDanhSachSanPhamBanChay", getBestSellingProducts );
 
 
 export default ProductRouter;

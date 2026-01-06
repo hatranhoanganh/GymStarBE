@@ -18,35 +18,7 @@ const ipnUrl =
   "https://unblockaded-argentina-habitable.ngrok-free.dev/MoMo/callback-payment";
 const requestType = "payWithMethod";
 
-cron.schedule("* * * * *", async () => {
-  const now = new Date();
 
-  const expiredOrders = await model.orders.findAll({
-    where: {
-      status: "chờ xác nhận",
-      order_date: { [Op.lt]: new Date(now - 15 * 60 * 1000) },
-    },
-    include: [
-      {
-        model: model.payments,
-        as: "payment",
-        where: { method: "MOMO" },
-        required: true,
-      },
-    ],
-  });
-
-  const ordersToCancel = expiredOrders.filter(
-    (order) => !order.payment.some((p) => p.status === "thành công")
-  );
-
-  for (const order of ordersToCancel) {
-    await cancelOrderAndRestoreStock(order.order_id);
-    console.log(
-      `Đơn MoMo #${order.order_id} quá hạn 15 phút → đã hủy và hoàn stock`
-    );
-  }
-});
 
 const createMoMoSignature = (params) => {
   return Object.keys(params)
@@ -60,7 +32,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   try {
     t = await sequelize.transaction();
 
-    // 1. Lấy chi tiết đơn (lock)
+  
     const details = await model.order_details.findAll({
       where: { order_id },
       attributes: ["product_variant_id", "quantity"],
@@ -68,7 +40,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       lock: t.LOCK.UPDATE,
     });
 
-    // 2. Hoàn stock
+
     for (const item of details) {
       await model.product_variants.increment("stock", {
         by: item.quantity,
@@ -77,7 +49,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       });
     }
 
-    // 3. Update payment → thất bại (chỉ khi chưa thành công)
+   
     await model.payments.update(
       {
         status: "thất bại",
@@ -91,7 +63,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       }
     );
 
-    // 4. Update order → đã hủy
+    
     await model.orders.update(
       { status: "đã hủy" },
       { where: { order_id }, transaction: t }
@@ -186,22 +158,44 @@ export const updatePayment = async (req, res) => {
 export const retryPayment = async (req, res) => {
   try {
     const { order_id } = req.body;
-    if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
+    if (!order_id) 
+      return res.status(400).json({ message: "Thiếu order_id" });
 
-    const order = await model.orders.findOne({ where: { order_id } });
+  
+    const order = await model.orders.findOne({
+      where: { order_id },
+      include: [
+        {
+          model: model.payments,
+          as: "payment",
+          attributes: ["status"],
+        },
+      ],
+    });
+
     if (!order)
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
 
+    const now = new Date();
+    const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
+
+    const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
+
+    
+    if (!isPaid && now > expiredAt && order.status === "chờ xác nhận") {
+      await cancelOrderAndRestoreStock(order_id);
+      return res.status(400).json({ message: "Đơn hàng đã hết hạn và bị hủy" });
+    }
+
+   
     if (order.status === "đã hủy")
       return res.status(400).json({ message: "Đơn hàng đã bị hủy" });
 
-    const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
-    if (new Date() > expiredAt) {
-      return res
-        .status(400)
-        .json({ message: "Đơn hàng đã hết hạn thanh toán" });
-    }
+    
+    if (isPaid)
+      return res.status(400).json({ message: "Đơn hàng đã được thanh toán" });
 
+   
     const newPayment = await model.payments.create({
       order_id,
       method: "MOMO",
@@ -223,6 +217,8 @@ export const retryPayment = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
 
 export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
