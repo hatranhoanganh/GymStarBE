@@ -579,7 +579,6 @@ const getOrderDetail = async (req, res) => {
     const role = req.user.role_name;
     const currentUserId = req.user.user_id;
 
-
     const order = await model.orders.findOne({
       where: { order_id },
       attributes: [
@@ -638,7 +637,12 @@ const getOrderDetail = async (req, res) => {
             {
               model: model.promotions,
               as: "promotion",
-              attributes: ["promotion_id", "discount_type", "value", "max_discount"],
+              attributes: [
+                "promotion_id",
+                "discount_type",
+                "value",
+                "max_discount",
+              ],
             },
           ],
         },
@@ -649,48 +653,72 @@ const getOrderDetail = async (req, res) => {
       return res.status(404).json({ message: "Không tìm thấy đơn hàng" });
     }
 
-    
-    const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
-    const expired = Date.now() - order.order_date.getTime() > 15 * 60 * 1000;
+  
+    const hasMomoPayment =
+      order.payment?.some((p) => p.method === "MOMO") || false;
 
-    if (expired && !isPaid && order.status === "chờ xác nhận") {
+    const hasSuccessPayment =
+      order.payment?.some((p) => p.status === "thành công") || false;
+
+    const expired =
+      Date.now() - new Date(order.order_date).getTime() >
+      15 * 60 * 1000;
+
+    if (
+      order.status === "chờ xác nhận" &&
+      hasMomoPayment &&
+      !hasSuccessPayment &&
+      expired
+    ) {
       await cancelOrderAndRestoreStock(order.order_id);
+
       return res.status(400).json({
         message: "Đơn hàng MoMo đã hết hạn 15 phút và đã bị hủy.",
       });
     }
-    
 
-    const latestPayment =
-      order.payment && order.payment.length > 0
-        ? order.payment.sort((a, b) => b.payment_id - a.payment_id)[0]
-        : null;
 
     const allowedFullAccessRoles = ["Quản trị viên", "Quản lý đơn hàng"];
-    if (!allowedFullAccessRoles.includes(role) && order.user_id !== currentUserId) {
+    if (
+      !allowedFullAccessRoles.includes(role) &&
+      order.user_id !== currentUserId
+    ) {
       return res.status(403).json({
         message: "Bạn không có quyền xem chi tiết đơn hàng của người khác",
       });
     }
 
+  
+    const latestPayment =
+      order.payment && order.payment.length > 0
+        ? order.payment.sort((a, b) => b.payment_id - a.payment_id)[0]
+        : null;
+
     let discount_amount = 0;
     if (order.promotion_usage && order.promotion_usage.promotion) {
       const promo = order.promotion_usage.promotion;
 
-      const totalBeforePromo = order.order_details.reduce((sum, item) => {
-        return sum + Number(item.price) * item.quantity;
-      }, 0);
+      const totalBeforePromo = order.order_details.reduce(
+        (sum, item) => sum + Number(item.price) * item.quantity,
+        0
+      );
 
       if (promo.discount_type === "fixed") {
         discount_amount = Number(promo.value);
       } else if (promo.discount_type === "percent") {
-        discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
+        discount_amount =
+          (totalBeforePromo * Number(promo.value)) / 100;
+
         if (promo.max_discount) {
-          discount_amount = Math.min(discount_amount, Number(promo.max_discount));
+          discount_amount = Math.min(
+            discount_amount,
+            Number(promo.max_discount)
+          );
         }
       }
     }
 
+   
     const formattedData = {
       order_id: order.order_id,
       order_date: formatVNDateTime(order.order_date),
@@ -702,7 +730,10 @@ const getOrderDetail = async (req, res) => {
       receiver_name: order.receiver_name,
       phone: order.phone,
       address_detail: order.address_detail,
-      received_date: order.received_date ? formatVNDateTime(order.received_date) : null,
+      received_date: order.received_date
+        ? formatVNDateTime(order.received_date)
+        : null,
+
       user: order.user
         ? {
             user_id: order.user.user_id,
@@ -712,19 +743,25 @@ const getOrderDetail = async (req, res) => {
             status: order.user.status,
           }
         : null,
+
       payments: order.payment
         ? order.payment.map((p) => ({
             payment_id: p.payment_id,
             method: p.method,
             total: Number(p.total),
             status: p.status,
-            payment_date: p.payment_date ? formatVNDateTime(p.payment_date) : null,
+            payment_date: p.payment_date
+              ? formatVNDateTime(p.payment_date)
+              : null,
           }))
         : [],
+
       items: order.order_details.map((item) => ({
         order_detail_id: item.order_detail_id,
         quantity: item.quantity,
-        original_price: Number(item.original_price || item.product_variant.product.price),
+        original_price: Number(
+          item.original_price || item.product_variant.product.price
+        ),
         price: Number(item.price),
         is_review: !!item.review,
         product: {
@@ -733,7 +770,8 @@ const getOrderDetail = async (req, res) => {
           thumbnail: item.product_variant.product.thumbnail,
         },
         variant: {
-          product_variant_id: item.product_variant.product_variant_id,
+          product_variant_id:
+            item.product_variant.product_variant_id,
           color: item.product_variant.color || null,
           size: item.product_variant.size || null,
           sku: item.product_variant.sku || null,
@@ -747,9 +785,13 @@ const getOrderDetail = async (req, res) => {
     });
   } catch (error) {
     console.error("Lỗi getOrderDetail:", error);
-    return res.status(500).json({ message: "Lỗi server", error: error.message });
+    return res.status(500).json({
+      message: "Lỗi server",
+      error: error.message,
+    });
   }
 };
+
 
 
 const cancelOrder = async (req, res) => {
@@ -920,74 +962,104 @@ const getAllOrders = async (req, res) => {
       ],
     });
 
-    const formatted = orders.map((order) => {
-      const latestPayment = (order.payment || []).sort(
-        (a, b) => b.payment_id - a.payment_id
-      )[0];
+    const formatted = await Promise.all(
+      orders.map(async (order) => {
+        
+        const hasMomoPayment =
+          order.payment?.some((p) => p.method === "MOMO") || false;
 
-      let discount_amount = 0;
-      const promoUsage = order.promotion_usage;
-      if (promoUsage && promoUsage.promotion) {
-        const promo = promoUsage.promotion;
-        const totalBeforePromo = order.order_details.reduce((sum, item) => {
-          return sum + Number(item.price) * item.quantity;
-        }, 0);
+        const hasSuccessPayment =
+          order.payment?.some((p) => p.status === "thành công") || false;
 
-        if (promo.discount_type === "fixed") {
-          discount_amount = Number(promo.value);
-        } else if (promo.discount_type === "percent") {
-          discount_amount = (totalBeforePromo * Number(promo.value)) / 100;
-          if (promo.max_discount) {
-            discount_amount = Math.min(
-              discount_amount,
-              Number(promo.max_discount)
-            );
+        const expired =
+          Date.now() - new Date(order.order_date).getTime() >
+          15 * 60 * 1000;
+
+        if (
+          order.status === "chờ xác nhận" &&
+          hasMomoPayment &&
+          !hasSuccessPayment &&
+          expired
+        ) {
+          await cancelOrderAndRestoreStock(order.order_id);
+          order.status = "đã hủy"; 
+        }
+
+       
+        const latestPayment = (order.payment || []).sort(
+          (a, b) => b.payment_id - a.payment_id
+        )[0];
+
+       
+        let discount_amount = 0;
+        const promoUsage = order.promotion_usage;
+
+        if (promoUsage && promoUsage.promotion) {
+          const promo = promoUsage.promotion;
+          const totalBeforePromo = order.order_details.reduce(
+            (sum, item) => sum + Number(item.price) * item.quantity,
+            0
+          );
+
+          if (promo.discount_type === "fixed") {
+            discount_amount = Number(promo.value);
+          } else if (promo.discount_type === "percent") {
+            discount_amount =
+              (totalBeforePromo * Number(promo.value)) / 100;
+
+            if (promo.max_discount) {
+              discount_amount = Math.min(
+                discount_amount,
+                Number(promo.max_discount)
+              );
+            }
           }
         }
-      }
 
-      return {
-        order_id: order.order_id,
-        status: order.status,
-        order_date: formatVNDateTime(order.order_date),
-        total: parseFloat(order.total || 0),
-        discount_amount,
-        receiver_name: order.receiver_name,
-        phone: order.phone,
-        address_detail: order.address_detail,
-        note: order.note || null,
+        return {
+          order_id: order.order_id,
+          status: order.status,
+          order_date: formatVNDateTime(order.order_date),
+          total: parseFloat(order.total || 0),
+          discount_amount,
+          receiver_name: order.receiver_name,
+          phone: order.phone,
+          address_detail: order.address_detail,
+          note: order.note || null,
 
-        user: {
-          user_id: order.user.user_id,
-          full_name: order.user.full_name,
-          email: order.user.email,
-          gender: order.user.gender,
-        },
+          user: {
+            user_id: order.user.user_id,
+            full_name: order.user.full_name,
+            email: order.user.email,
+            gender: order.user.gender,
+          },
 
-        payment: latestPayment
-          ? {
-              method: latestPayment.method,
-              status: latestPayment.status,
-              payment_date: latestPayment.payment_date
-                ? formatVNDateTime(latestPayment.payment_date)
-                : null,
-            }
-          : null,
+          payment: latestPayment
+            ? {
+                method: latestPayment.method,
+                status: latestPayment.status,
+                payment_date: latestPayment.payment_date
+                  ? formatVNDateTime(latestPayment.payment_date)
+                  : null,
+              }
+            : null,
 
-        items: (order.order_details || []).map((detail) => ({
-          product_id: detail.product_variant.product.product_id,
-          name: detail.product_variant.product.name,
-          thumbnail: detail.product_variant.product.thumbnail,
-          product_variant_id: detail.product_variant.product_variant_id,
-          color: detail.product_variant.color,
-          size: detail.product_variant.size || null,
-          sku: detail.product_variant.sku,
-          quantity: detail.quantity,
-          price_original: parseFloat(detail.original_price || 0),
-          final_price: parseFloat(detail.price || 0),
-        })),
-      };
-    });
+          items: (order.order_details || []).map((detail) => ({
+            product_id: detail.product_variant.product.product_id,
+            name: detail.product_variant.product.name,
+            thumbnail: detail.product_variant.product.thumbnail,
+            product_variant_id:
+              detail.product_variant.product_variant_id,
+            color: detail.product_variant.color,
+            size: detail.product_variant.size || null,
+            sku: detail.product_variant.sku,
+            quantity: detail.quantity,
+            price_original: parseFloat(detail.original_price || 0),
+            final_price: parseFloat(detail.price || 0),
+          })),
+        };
+      })
+    );
 
     return res.json({
       message: "Lấy danh sách đơn hàng thành công",
@@ -1001,6 +1073,7 @@ const getAllOrders = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 const updateOrderStatus = async (req, res) => {
   const t = await sequelize.transaction();
@@ -1334,24 +1407,33 @@ const getOrdersByStatus = async (req, res) => {
     }
 
     const now = Date.now();
-
     const formatted = [];
 
     for (const order of orders) {
-     
-      const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
-      const expired = now - order.order_date.getTime() > 15 * 60 * 1000;
+   
+      const hasMomoPayment =
+        order.payment?.some((p) => p.method === "MOMO") || false;
 
-      if (expired && !isPaid && order.status === "chờ xác nhận") {
+      const hasSuccessPayment =
+        order.payment?.some((p) => p.status === "thành công") || false;
+
+      const expired =
+        now - order.order_date.getTime() > 15 * 60 * 1000;
+
+      if (
+        order.status === "chờ xác nhận" &&
+        hasMomoPayment &&
+        !hasSuccessPayment &&
+        expired
+      ) {
         await cancelOrderAndRestoreStock(order.order_id);
-       
-        
+        order.status = "đã hủy"; 
       }
-    
 
       let discount_amount = 0;
       if (order.promotion_usage && order.promotion_usage.promotion) {
         const promotion = order.promotion_usage.promotion;
+
         const totalBeforePromo = order.order_details.reduce(
           (sum, d) => sum + Number(d.price) * d.quantity,
           0
@@ -1360,13 +1442,19 @@ const getOrdersByStatus = async (req, res) => {
         if (promotion.discount_type === "fixed") {
           discount_amount = Number(promotion.value);
         } else if (promotion.discount_type === "percent") {
-          discount_amount = totalBeforePromo * (Number(promotion.value) / 100);
+          discount_amount =
+            totalBeforePromo * (Number(promotion.value) / 100);
+
           if (promotion.max_discount) {
-            discount_amount = Math.min(discount_amount, Number(promotion.max_discount));
+            discount_amount = Math.min(
+              discount_amount,
+              Number(promotion.max_discount)
+            );
           }
         }
       }
 
+  
       const items = order.order_details.map((detail) => ({
         product_id: detail.product_variant.product.product_id,
         name: detail.product_variant.product.name,
@@ -1403,6 +1491,7 @@ const getOrdersByStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 export {

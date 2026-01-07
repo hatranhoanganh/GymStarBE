@@ -19,7 +19,6 @@ const ipnUrl =
 const requestType = "payWithMethod";
 
 
-
 const createMoMoSignature = (params) => {
   return Object.keys(params)
     .sort()
@@ -32,7 +31,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   try {
     t = await sequelize.transaction();
 
-  
+
     const details = await model.order_details.findAll({
       where: { order_id },
       attributes: ["product_variant_id", "quantity"],
@@ -49,7 +48,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       });
     }
 
-   
+
     await model.payments.update(
       {
         status: "thất bại",
@@ -63,7 +62,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       }
     );
 
-    
+   
     await model.orders.update(
       { status: "đã hủy" },
       { where: { order_id }, transaction: t }
@@ -219,7 +218,6 @@ export const retryPayment = async (req, res) => {
 };
 
 
-
 export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
   if (!order) throw new Error("Đơn không tồn tại");
@@ -263,7 +261,9 @@ export const prepareMomoPayment = async (order_id) => {
   };
 
   const result = await axios.post(endpoint, body, {
+    
     headers: { "Content-Type": "application/json" },
   });
+  
   return result.data;
 };

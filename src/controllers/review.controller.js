@@ -379,13 +379,14 @@ const toggleReviewVisibility = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
- const getAllReviews = async (req, res) => {
+
+
+const getAllReviews = async (req, res) => {
   try {
     const { page = 1, limit = 10 } = req.query;
 
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 10;
-
+    const pageNum = parseInt(page, 10) || 1;
+    const pageSize = parseInt(limit, 10) || 10;
 
     const total = await model.reviews.count();
 
@@ -403,7 +404,6 @@ const toggleReviewVisibility = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages);
     const offset = (validPage - 1) * pageSize;
 
-
     const reviews = await model.reviews.findAll({
       include: [
         {
@@ -414,11 +414,24 @@ const toggleReviewVisibility = async (req, res) => {
             {
               model: model.orders,
               as: "order",
+              attributes: ["order_id"],
               include: [
                 {
                   model: model.users,
                   as: "user",
                   attributes: ["user_id", "full_name", "email", "gender"],
+                },
+              ],
+            },
+            {
+              model: model.product_variants,
+              as: "product_variant",
+              attributes: ["product_variant_id"],
+              include: [
+                {
+                  model: model.products,
+                  as: "product",
+                  attributes: ["product_id", "name", "thumbnail"],
                 },
               ],
             },
@@ -448,11 +461,29 @@ const toggleReviewVisibility = async (req, res) => {
 
     const formattedData = reviews.map((r) => ({
       review_id: r.review_id,
+
+     
+      order_id: r.order_detail?.order?.order_id || null,
+
       rating: r.rating,
       comment: r.comment,
       is_visible: r.is_visible,
       createdAt: formatVNDateTime(r.createdAt),
+
       images: r.review_images.map((img) => img.image),
+
+     
+      product: r.order_detail?.product_variant?.product
+        ? {
+            product_id:
+              r.order_detail.product_variant.product.product_id,
+            product_name:
+              r.order_detail.product_variant.product.name,
+            thumbnail:
+              r.order_detail.product_variant.product.thumbnail,
+          }
+        : null,
+
       reviewer: r.order_detail?.order?.user
         ? {
             user_id: r.order_detail.order.user.user_id,
@@ -461,6 +492,7 @@ const toggleReviewVisibility = async (req, res) => {
             gender: r.order_detail.order.user.gender,
           }
         : null,
+
       reply: r.review_reply
         ? {
             message: r.review_reply.message,
@@ -488,6 +520,9 @@ const toggleReviewVisibility = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
+
+
 const getReviewDetailByOrder = async (req, res) => {
   try {
     const { order_detail_id } = req.params;
@@ -637,6 +672,7 @@ const getReviewsByUser = async (req, res) => {
               as: "order",
               required: true,
               where: { user_id },
+              attributes: ["order_id"],
             },
             {
               model: model.product_variants,
@@ -687,6 +723,7 @@ const getReviewsByUser = async (req, res) => {
 
     const data = reviews.map((r) => ({
       review_id: r.review_id,
+       order_id: r.order_detail?.order?.order_id || null,
       rating: r.rating,
       comment: r.comment,
       is_visible: r.is_visible,
@@ -746,7 +783,6 @@ export {
   createReview,
   replyReview,
   getReviewsByProduct,
-
   toggleReviewVisibility,
   getAllReviews,
   getReviewDetailByOrder,
