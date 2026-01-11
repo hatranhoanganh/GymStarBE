@@ -2,7 +2,7 @@ import dotenv from "dotenv";
 import sequelize from "../config/database.js";
 import initModels from "../models/init-models.js";
 import { formatVNDateTime } from "../utils/dateFormat.js";
-import { Op, fn, col, literal,Sequelize } from "sequelize";
+import { Op, fn, col, literal, Sequelize } from "sequelize";
 import cloudinary from "../config/cloudinary.js";
 import fs from "fs/promises";
 
@@ -124,7 +124,7 @@ const addFullProduct = async (req, res) => {
     if (discount !== undefined && discount !== "") {
       const d = Number(discount);
       if (!Number.isInteger(d) || d < 0 || d > 99)
-        return sendError("Giảm giá phải từ 0 đến 99");
+        return sendError("Giảm giá phải là số nguyên từ 0 - 99");
       finalDiscount = d;
     }
 
@@ -179,8 +179,16 @@ const addFullProduct = async (req, res) => {
         return sendError(`Stock không hợp lệ cho màu ${color}`);
 
       const price = Number(v.price);
-      if (!Number.isInteger(price) || price < 40000 || price > 10000000)
+
+      if (!Number.isInteger(price) || price < 40000 || price > 10000000) {
         return sendError(`Giá màu ${color} phải từ 40,000 đến 10,000,000`);
+      }
+
+      if (price % 1000 !== 0) {
+        return sendError(
+          `Giá màu ${color} phải có 3 số cuối là 000 (ví dụ: 123000)`
+        );
+      }
 
       const key = `${color}-${size || "NOSIZE"}`;
       if (variantKeySet.has(key)) return sendError(`Trùng biến thể: ${key}`);
@@ -416,8 +424,16 @@ const addProductVariant = async (req, res) => {
         return sendError(`Số lượng phải từ 1 đến 10000 cho màu ${color}`);
 
       const price = Number(v.price);
-      if (!Number.isInteger(price) || price < 40000 || price > 10000000)
+
+      if (!Number.isInteger(price) || price < 40000 || price > 10000000) {
         return sendError(`Giá không hợp lệ cho màu ${color}`);
+      }
+
+      if (price % 1000 !== 0) {
+        return sendError(
+          `Giá của màu ${color} phải có 3 số cuối là 000 (ví dụ: 123000)`
+        );
+      }
 
       if (cleanVariants.some((cv) => cv.color === color && cv.size === size))
         return sendError(`Trùng size trong cùng màu ${color}`);
@@ -677,7 +693,7 @@ const updateFullProduct = async (req, res) => {
     if (discount !== undefined && discount !== "") {
       const d = Number(discount);
       if (!Number.isInteger(d) || d < 0 || d > 99)
-        return sendError("Giảm giá phải từ 0 → 99");
+        return sendError("Giảm giá phải là số nguyên từ 0 - 99");
       product.discount = d;
     }
 
@@ -743,8 +759,16 @@ const updateFullProduct = async (req, res) => {
           return sendError(`Stock không hợp lệ cho màu ${color}`);
 
         const price = Number(v.price);
-        if (!Number.isInteger(price) || price < 40000 || price > 10000000)
+
+        if (!Number.isInteger(price) || price < 40000 || price > 10000000) {
           return sendError(`Giá không hợp lệ cho màu ${color}`);
+        }
+
+        if (price % 1000 !== 0) {
+          return sendError(
+            `Giá của màu ${color} phải có 3 số cuối là 000 (ví dụ: 123000)`
+          );
+        } 
 
         const key = `${color}-${size || "NOSIZE"}`;
         if (variantKeySet.has(key)) return sendError(`Trùng biến thể: ${key}`);
@@ -898,8 +922,19 @@ const addSizeToVariant = async (req, res) => {
     if (price === undefined || price === null || price === "")
       return sendError("Giá không được để trống");
     const priceNum = Number(price);
-    if (!Number.isInteger(priceNum) || priceNum < 40000 || priceNum > 10000000)
+
+    if (
+      !Number.isInteger(priceNum) ||
+      priceNum < 40000 ||
+      priceNum > 10000000
+    ) {
       return sendError("Giá phải là số nguyên từ 40,000 → 10,000,000");
+    }
+
+    if (priceNum % 1000 !== 0) {
+      return sendError("Giá phải có 3 số cuối là 000 (ví dụ: 123000)");
+    }
+
     price = priceNum;
 
     const product = await model.products.findByPk(product_id, {
@@ -972,7 +1007,6 @@ const deleteProductVariant = async (req, res) => {
       });
     }
 
-   
     const product = await model.products.findByPk(product_id, {
       transaction: t,
     });
@@ -984,7 +1018,6 @@ const deleteProductVariant = async (req, res) => {
       });
     }
 
-
     if (product.status !== "ngưng bán") {
       await t.rollback();
       return res.status(400).json({
@@ -993,7 +1026,6 @@ const deleteProductVariant = async (req, res) => {
       });
     }
 
-  
     const variants = await model.product_variants.findAll({
       where: { product_id, color },
       attributes: ["product_variant_id"],
@@ -1007,10 +1039,7 @@ const deleteProductVariant = async (req, res) => {
       });
     }
 
-    const variantIds = variants.map(
-      (v) => v.product_variant_id
-    );
-
+    const variantIds = variants.map((v) => v.product_variant_id);
 
     const usedInOrders = await model.order_details.count({
       where: {
@@ -1028,7 +1057,6 @@ const deleteProductVariant = async (req, res) => {
       });
     }
 
-   
     await model.cart_details.destroy({
       where: {
         product_variant_id: {
@@ -1038,7 +1066,6 @@ const deleteProductVariant = async (req, res) => {
       transaction: t,
     });
 
-  
     const normalizeColor = (c) =>
       c
         .normalize("NFD")
@@ -1087,7 +1114,6 @@ const deleteProductVariant = async (req, res) => {
     });
   }
 };
-
 
 const getAllChildCategoryIds = (categories, parentId) => {
   let result = [];
@@ -1191,7 +1217,7 @@ const getAllProducts = async (req, res) => {
         const discountedPrice =
           p.discount > 0 ? basePrice * (1 - p.discount / 100) : basePrice;
 
-        const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+        const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
         return {
           product_variant_id: v.product_variant_id,
@@ -1238,14 +1264,11 @@ const getAllProducts = async (req, res) => {
   }
 };
 
-
-
 const getNewProductsLastDays = async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 10;
 
-  
     let day = parseInt(req.query.day);
     if (isNaN(day)) day = 2;
 
@@ -1255,7 +1278,6 @@ const getNewProductsLastDays = async (req, res) => {
       });
     }
 
-   
     const fromDate = new Date();
     fromDate.setDate(fromDate.getDate() - day);
 
@@ -1647,7 +1669,7 @@ const getProductDetail = async (req, res) => {
           ? basePrice * (1 - product.discount / 100)
           : basePrice;
 
-      const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+      const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
       return {
         product_variant_id: v.product_variant_id,
@@ -1693,7 +1715,6 @@ const deleteProduct = async (req, res) => {
   const t = await sequelize.transaction();
 
   try {
-   
     const product = await model.products.findByPk(product_id, {
       transaction: t,
     });
@@ -1703,7 +1724,6 @@ const deleteProduct = async (req, res) => {
       return res.status(404).json({ message: "Sản phẩm không tồn tại" });
     }
 
-   
     if (product.status !== "ngưng bán") {
       await t.rollback();
       return res.status(400).json({
@@ -1712,7 +1732,6 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-   
     const inOrder = await model.order_details.count({
       include: [
         {
@@ -1732,18 +1751,14 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-    
     const variants = await model.product_variants.findAll({
       where: { product_id },
       attributes: ["product_variant_id"],
       transaction: t,
     });
 
-    const variantIds = variants.map(
-      (v) => v.product_variant_id
-    );
+    const variantIds = variants.map((v) => v.product_variant_id);
 
-    
     if (variantIds.length > 0) {
       await model.cart_details.destroy({
         where: {
@@ -1755,7 +1770,6 @@ const deleteProduct = async (req, res) => {
       });
     }
 
-   
     const folderPrefix = `products/${product_id}`;
     try {
       await cloudinary.api.delete_resources_by_prefix(folderPrefix, {
@@ -1771,7 +1785,6 @@ const deleteProduct = async (req, res) => {
       console.error("Lỗi xóa Cloudinary:", cloudErr.message);
     }
 
- 
     await model.product_images.destroy({
       where: { product_id },
       transaction: t,
@@ -1802,8 +1815,6 @@ const deleteProduct = async (req, res) => {
     });
   }
 };
-
-
 
 const getProductByCategory = async (req, res) => {
   try {
@@ -1931,7 +1942,7 @@ const getProductByCategory = async (req, res) => {
         const discountedPrice =
           p.discount > 0 ? basePrice * (1 - p.discount / 100) : basePrice;
 
-        const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+        const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
         return {
           product_variant_id: v.product_variant_id,
@@ -1996,11 +2007,9 @@ const deleteSize = async (req, res) => {
       });
     }
 
-   
-    const variant = await model.product_variants.findByPk(
-      product_variant_id,
-      { transaction: t }
-    );
+    const variant = await model.product_variants.findByPk(product_variant_id, {
+      transaction: t,
+    });
 
     if (!variant) {
       await t.rollback();
@@ -2009,11 +2018,9 @@ const deleteSize = async (req, res) => {
       });
     }
 
- 
-    const product = await model.products.findByPk(
-      variant.product_id,
-      { transaction: t }
-    );
+    const product = await model.products.findByPk(variant.product_id, {
+      transaction: t,
+    });
 
     if (!product) {
       await t.rollback();
@@ -2022,7 +2029,6 @@ const deleteSize = async (req, res) => {
       });
     }
 
-   
     if (product.status !== "ngưng bán") {
       await t.rollback();
       return res.status(400).json({
@@ -2030,7 +2036,6 @@ const deleteSize = async (req, res) => {
       });
     }
 
- 
     const usedInOrder = await model.order_details.count({
       where: { product_variant_id },
       transaction: t,
@@ -2048,7 +2053,6 @@ const deleteSize = async (req, res) => {
       transaction: t,
     });
 
- 
     await model.product_variants.destroy({
       where: { product_variant_id },
       transaction: t,
@@ -2168,7 +2172,7 @@ const getDiscountProducts = async (req, res) => {
         const discountedPrice =
           p.discount > 0 ? basePrice * (1 - p.discount / 100) : basePrice;
 
-        const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+        const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
         return {
           product_variant_id: v.product_variant_id,
@@ -2219,7 +2223,6 @@ const getBestSellingProducts = async (req, res) => {
     const page = parseInt(req.query.page) || 1;
     const limit = parseInt(req.query.limit) || 20;
 
-   
     const sellingData = await model.order_details.findAll({
       attributes: [
         [col("product_variant.product_id"), "product_id"],
@@ -2267,7 +2270,6 @@ const getBestSellingProducts = async (req, res) => {
 
     const productIds = sellingData.map((i) => i.product_id);
 
-    
     const total = productIds.length;
     const totalPages = Math.ceil(total / limit);
     const validPage = Math.min(page, totalPages);
@@ -2276,7 +2278,6 @@ const getBestSellingProducts = async (req, res) => {
       validPage * limit
     );
 
-    
     const products = await model.products.findAll({
       where: {
         product_id: { [Op.in]: pagedIds },
@@ -2328,7 +2329,6 @@ const getBestSellingProducts = async (req, res) => {
       nest: true,
     });
 
-    
     const formattedData = products.map((p) => {
       const colors = {};
       p.product_images.forEach((img) => {
@@ -2342,7 +2342,7 @@ const getBestSellingProducts = async (req, res) => {
         const basePrice = Number(v.price);
         const discountedPrice =
           p.discount > 0 ? basePrice * (1 - p.discount / 100) : basePrice;
-        const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+        const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
         return {
           product_variant_id: v.product_variant_id,
@@ -2355,9 +2355,7 @@ const getBestSellingProducts = async (req, res) => {
         };
       });
 
-      const soldInfo = sellingData.find(
-        (s) => s.product_id === p.product_id
-      );
+      const soldInfo = sellingData.find((s) => s.product_id === p.product_id);
 
       return {
         product_id: p.product_id,

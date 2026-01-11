@@ -34,7 +34,17 @@ const createCategory = async (req, res) => {
       }
       validParentId = parent_id;
     }
+    else {
+      const parentCount = await model.categories.count({
+        where: { parent_id: null },
+      });
 
+      if (parentCount >= 5) {
+        return res.status(400).json({
+          message: "Chỉ được phép tạo tối đa 5 danh mục cha",
+        });
+      }
+    }
     const existing = await model.categories.findOne({
       where: { name: cleanName, parent_id: validParentId },
     });

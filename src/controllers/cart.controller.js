@@ -244,7 +244,7 @@ const getCart = async (req, res) => {
           ? basePrice * (1 - discountPercent / 100)
           : basePrice;
 
-      const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+      const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
       return {
         cart_detail_id: item.cart_detail_id,

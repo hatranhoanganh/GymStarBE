@@ -9,7 +9,6 @@ const model = initModels(sequelize);
 
 const createPromotion = async (req, res) => {
   try {
-
     const body = {};
     for (const key in req.body) {
       if (typeof req.body[key] === "string") {
@@ -31,64 +30,82 @@ const createPromotion = async (req, res) => {
       usage_per_user,
     } = body;
 
- 
     if (!code)
       return res
         .status(400)
         .json({ message: "Code khuyến mãi không được để trống" });
+
     if (code.length < 3 || code.length > 30) {
       return res.status(400).json({ message: "Code phải từ 3 đến 30 ký tự" });
     }
+
     if (!/^[a-zA-Z0-9\s.,-]+$/.test(code)) {
       return res.status(400).json({
         message: "Code chỉ được chứa chữ, số, khoảng trắng và dấu ., -",
       });
     }
 
-    
     if (!description)
       return res
         .status(400)
         .json({ message: "Description không được để trống" });
+
     if (description.length < 5 || description.length > 100) {
       return res
         .status(400)
         .json({ message: "Description phải từ 5 đến 100 ký tự" });
     }
-    // if (!/^[a-zA-ZÀ-ỹ0-9\s.,-]+$/u.test(description)) {
-    //   return res.status(400).json({
-    //     message: "Description chỉ được chứa chữ, số, khoảng trắng và dấu ., -",
-    //   });
-    // }
 
-  
     if (!discount_type || !["fixed", "percent"].includes(discount_type)) {
       return res
         .status(400)
         .json({ message: "discount_type phải là 'fixed' hoặc 'percent'" });
     }
 
-  
     value = Number(value);
-    if (isNaN(value))
-      return res.status(400).json({ message: "value phải là số" });
+    if (!Number.isInteger(value)) {
+      return res.status(400).json({ message: "value phải là số nguyên" });
+    }
 
     if (discount_type === "fixed") {
-      if (value < 20000 || value > 5000000)
-        return res
-          .status(400)
-          .json({ message: "Value fixed phải từ 20,000 đến 5,000,000" });
-    } else if (discount_type === "percent") {
-      if (value < 0 || value > 99)
-        return res
-          .status(400)
-          .json({ message: "Value percent phải từ 0 đến 99" });
+      if (value < 20000 || value > 5000000) {
+        return res.status(400).json({
+          message: "Value fixed phải từ 20,000 đến 5,000,000",
+        });
+      }
+
+      if (value % 1000 !== 0) {
+        return res.status(400).json({
+          message: "Value fixed phải có 3 số cuối là 000",
+        });
+      }
+    }
+
+    if (discount_type === "percent") {
+      if (value < 0 || value > 99) {
+        return res.status(400).json({
+          message: "Value percent phải từ 0 đến 99",
+        });
+      }
 
       max_discount = Number(max_discount);
-      if (isNaN(max_discount) || max_discount < 0 || max_discount > 5000000)
-        return res
-          .status(400)
-          .json({ message: "max_discount phải từ 0 đến 5,000,000" });
+      if (!Number.isInteger(max_discount)) {
+        return res.status(400).json({
+          message: "max_discount phải là số nguyên",
+        });
+      }
+
+      if (max_discount < 20000 || max_discount > 5000000) {
+        return res.status(400).json({
+          message: "max_discount phải từ 20,000 đến 5,000,000",
+        });
+      }
+
+      if (max_discount % 1000 !== 0) {
+        return res.status(400).json({
+          message: "max_discount phải có 3 số cuối là 000",
+        });
+      }
     }
 
     if (!start_date || !end_date) {
@@ -111,7 +128,6 @@ const createPromotion = async (req, res) => {
         .json({ message: "start_date hoặc end_date không hợp lệ" });
     }
 
-   
     start.setHours(0, 0, 0, 0);
     end.setHours(23, 59, 59, 999);
 
@@ -123,29 +139,36 @@ const createPromotion = async (req, res) => {
 
     min_order_value = Number(min_order_value);
     if (
-      isNaN(min_order_value) ||
-      min_order_value < 200000 ||
+      !Number.isInteger(min_order_value) ||
+      min_order_value < 100000 ||
       min_order_value > 10000000
     ) {
       return res.status(400).json({
-        message: "min_order_value phải từ 200,000 đến 10,000,000",
+        message: "min_order_value phải từ 100,000 đến 10,000,000",
       });
     }
 
-    
-    usage_per_user = Number(usage_per_user);
-    if (isNaN(usage_per_user) || usage_per_user < 1 || usage_per_user > 30) {
+    if (min_order_value % 1000 !== 0) {
       return res.status(400).json({
-        message: "usage_per_user phải từ 1 đến 30",
+        message: "min_order_value phải có 3 số cuối là 000",
       });
     }
 
-  
+    usage_per_user = Number(usage_per_user);
+    if (
+      !Number.isInteger(usage_per_user) ||
+      usage_per_user < 1 ||
+      usage_per_user > 30
+    ) {
+      return res.status(400).json({
+        message: "usage_per_user phải là số nguyên từ 1 đến 30",
+      });
+    }
+
     const existing = await model.promotions.findOne({ where: { code } });
     if (existing)
       return res.status(400).json({ message: "Code khuyến mãi đã tồn tại" });
 
- 
     const newPromotion = await model.promotions.create({
       code,
       value,
@@ -156,7 +179,7 @@ const createPromotion = async (req, res) => {
       start_date: start,
       end_date: end,
       usage_per_user,
-      status: "active", 
+      status: "active",
     });
 
     return res.status(201).json({
@@ -168,11 +191,11 @@ const createPromotion = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server khi tạo khuyến mãi" });
   }
 };
+
 const updatePromotion = async (req, res) => {
   try {
     const { promotion_id } = req.params;
 
-    
     const body = {};
     for (const key in req.body) {
       body[key] =
@@ -180,7 +203,6 @@ const updatePromotion = async (req, res) => {
           ? req.body[key].trim()
           : req.body[key];
     }
-
 
     const promotion = await model.promotions.findByPk(promotion_id);
     if (!promotion)
@@ -202,12 +224,10 @@ const updatePromotion = async (req, res) => {
       }
     }
 
-    
     const code = body.code ?? promotion.code;
     const description = body.description ?? promotion.description;
     const usage_per_user = body.usage_per_user ?? promotion.usage_per_user;
 
-    
     if (!code)
       return res.status(400).json({ message: "Code không được để trống" });
 
@@ -229,7 +249,6 @@ const updatePromotion = async (req, res) => {
     if (existing)
       return res.status(400).json({ message: "Code khuyến mãi đã tồn tại" });
 
-   
     if (!description)
       return res
         .status(400)
@@ -240,14 +259,13 @@ const updatePromotion = async (req, res) => {
         message: "Description phải từ 5 đến 100 ký tự",
       });
 
-
     const usage = Number(usage_per_user);
-    if (isNaN(usage) || usage < 1 || usage > 30)
+    if (!Number.isInteger(usage) || usage < 1 || usage > 30) {
       return res.status(400).json({
-        message: "usage_per_user phải từ 1 đến 30",
+        message: "usage_per_user phải là số nguyên từ 1 đến 30",
       });
+    }
 
- 
     let start = promotion.start_date;
     let end = promotion.end_date;
 
@@ -327,7 +345,6 @@ const togglePromotionStatus = async (req, res) => {
   try {
     const { promotion_id } = req.params;
 
-   
     const promotion = await model.promotions.findByPk(promotion_id);
 
     if (!promotion) {
@@ -336,7 +353,6 @@ const togglePromotionStatus = async (req, res) => {
       });
     }
 
-   
     let newStatus;
     if (promotion.status === "active") {
       newStatus = "inactive";
@@ -366,7 +382,6 @@ const togglePromotionStatus = async (req, res) => {
 };
 const getAllPromotions = async (req, res) => {
   try {
-   
     const { page = 1, limit = 10 } = req.query;
 
     const pageNum = parseInt(page) || 1;
@@ -388,7 +403,6 @@ const getAllPromotions = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    
     const promotions = await model.promotions.findAll({
       limit: pageSize,
       offset,
@@ -431,7 +445,6 @@ const getActivePromotionsForUser = async (req, res) => {
   try {
     const user_id = req.user.user_id;
 
-   
     const promotions = await model.promotions.findAll({
       where: {
         status: "active",
@@ -446,33 +459,26 @@ const getActivePromotionsForUser = async (req, res) => {
       });
     }
 
- 
     const formattedData = [];
 
     for (const promotion of promotions) {
-     
       const usedCount = await model.promotion_usages.count({
-  where: {
-    promotion_id: promotion.promotion_id,
-  },
-  include: [
-    {
-      model: model.orders,
-      as: "order",        
-      required: true,
-      where: { user_id },
-    },
-  ],
-});
+        where: {
+          promotion_id: promotion.promotion_id,
+        },
+        include: [
+          {
+            model: model.orders,
+            as: "order",
+            required: true,
+            where: { user_id },
+          },
+        ],
+      });
 
-
-      
       let remaining_usage = null;
       if (promotion.usage_per_user !== null) {
-        remaining_usage = Math.max(
-          promotion.usage_per_user - usedCount,
-          0
-        );
+        remaining_usage = Math.max(promotion.usage_per_user - usedCount, 0);
       }
 
       formattedData.push({
@@ -492,9 +498,7 @@ const getActivePromotionsForUser = async (req, res) => {
           ? formatVNDate(promotion.start_date)
           : null,
 
-        end_date: promotion.end_date
-          ? formatVNDate(promotion.end_date)
-          : null,
+        end_date: promotion.end_date ? formatVNDate(promotion.end_date) : null,
       });
     }
 
@@ -509,8 +513,6 @@ const getActivePromotionsForUser = async (req, res) => {
     });
   }
 };
-
-
 
 export {
   createPromotion,

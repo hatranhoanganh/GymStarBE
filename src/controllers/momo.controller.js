@@ -16,6 +16,7 @@ const endpoint = "https://test-payment.momo.vn/v2/gateway/api/create";
 const redirectUrl = "http://localhost:5173/payment-result";
 const ipnUrl =
   "https://unblockaded-argentina-habitable.ngrok-free.dev/MoMo/callback-payment";
+  // const ipnUrl = "https://freeborn-dutiful-marisa.ngrok-free.dev/MoMo/callback-payment";
 const requestType = "payWithMethod";
 
 
@@ -222,7 +223,7 @@ export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
   if (!order) throw new Error("Đơn không tồn tại");
 
-  const amount = Math.round(Number(order.total)).toString();
+  const amount = Math.floor(Number(order.total)).toString();
   const orderId = `${order_id}_${Date.now()}`;
   const requestId = orderId;
   const orderInfo = `Thanh toán đơn hàng #${order_id}`;

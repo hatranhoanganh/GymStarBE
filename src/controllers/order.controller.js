@@ -110,7 +110,7 @@ const placeDirectOrder = async (req, res) => {
         ? basePrice * (1 - discountPercent / 100)
         : basePrice;
 
-    const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+    const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
     let totalAmount = finalPrice * finalQuantity;
     let discount_amount = 0;
@@ -180,7 +180,7 @@ const placeDirectOrder = async (req, res) => {
       }
 
       totalAmount = Math.max(totalAmount - discount_amount, 0);
-      totalAmount = Math.round(totalAmount / 1000) * 1000;
+      
     }
 
  
@@ -404,7 +404,7 @@ const placeCartOrder = async (req, res) => {
           ? basePrice * (1 - discountPercent / 100)
           : basePrice;
 
-      const finalPrice = Math.round(discountedPrice / 1000) * 1000;
+      const finalPrice = Math.floor(discountedPrice / 1000) * 1000;
 
       totalAmount += finalPrice * item.quantity;
 
@@ -476,7 +476,7 @@ const placeCartOrder = async (req, res) => {
       }
 
       totalAmount = Math.max(totalAmount - discount_amount, 0);
-      totalAmount = Math.round(totalAmount / 1000) * 1000;
+  
     }
 
     const order = await model.orders.create(
