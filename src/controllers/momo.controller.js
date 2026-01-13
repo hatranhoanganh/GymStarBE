@@ -16,9 +16,8 @@ const endpoint = "https://test-payment.momo.vn/v2/gateway/api/create";
 const redirectUrl = "http://localhost:5173/payment-result";
 const ipnUrl =
   "https://unblockaded-argentina-habitable.ngrok-free.dev/MoMo/callback-payment";
-  // const ipnUrl = "https://freeborn-dutiful-marisa.ngrok-free.dev/MoMo/callback-payment";
+// const ipnUrl = "https://freeborn-dutiful-marisa.ngrok-free.dev/MoMo/callback-payment";
 const requestType = "payWithMethod";
-
 
 const createMoMoSignature = (params) => {
   return Object.keys(params)
@@ -32,14 +31,12 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
   try {
     t = await sequelize.transaction();
 
-
     const details = await model.order_details.findAll({
       where: { order_id },
       attributes: ["product_variant_id", "quantity"],
       transaction: t,
       lock: t.LOCK.UPDATE,
     });
-
 
     for (const item of details) {
       await model.product_variants.increment("stock", {
@@ -48,7 +45,6 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
         transaction: t,
       });
     }
-
 
     await model.payments.update(
       {
@@ -63,7 +59,6 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
       }
     );
 
-   
     await model.orders.update(
       { status: "đã hủy" },
       { where: { order_id }, transaction: t }
@@ -79,6 +74,7 @@ export const cancelOrderAndRestoreStock = async (order_id) => {
 
 export const updatePayment = async (req, res) => {
   console.log("MoMo IPN nhận được:", req.body);
+  let t;
   try {
     const {
       partnerCode,
@@ -124,44 +120,92 @@ export const updatePayment = async (req, res) => {
     const order_id = JSON.parse(extraData || "{}").order_id;
     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
 
-    const payments = await model.payments.findAll({
-      where: { order_id, method: "MOMO" },
-      order: [["payment_id", "DESC"]],
+    t = await sequelize.transaction();
+
+    const paid = await model.payments.findOne({
+      where: {
+        order_id,
+        status: "thành công",
+      },
+      transaction: t,
+      lock: t.LOCK.UPDATE,
     });
 
-    const payment = payments.find((p) => p.status !== "thành công");
-    if (!payment)
-      return res
-        .status(404)
-        .json({ message: "Không tìm thấy payment chưa thành công" });
-
-    if (resultCode == 0) {
-      await payment.update({
-        status: "thành công",
-        payment_date: new Date(Number(responseTime)),
-        trans_id: transId?.toString(),
-      });
-    } else {
-      await payment.update({
-        status: "thất bại",
-        payment_date: null,
+    if (paid) {
+      await t.rollback();
+      return res.json({
+        resultCode: 0,
+        message: "Đơn hàng đã được thanh toán trước đó",
       });
     }
 
-    return res.json({ resultCode: 0, message: "OK" });
-  } catch (error) {
-    console.error("Lỗi IPN MoMo:", error);
-    return res.status(500).json({ message: "Server error" });
+    const payment = await model.payments.findOne({
+      where: {
+        order_id,
+        status: { [Op.ne]: "thành công" },
+      },
+      order: [["payment_id", "DESC"]],
+      transaction: t,
+      lock: t.LOCK.UPDATE,
+    });
+
+    if (!payment) {
+      await t.rollback();
+      return res.json({
+        resultCode: 0,
+        message: "Không có giao dịch hợp lệ để xử lý",
+      });
+    }
+
+    if (resultCode == 0) {
+      await payment.update(
+        {
+          status: "thành công",
+          payment_date: new Date(Number(responseTime)),
+          trans_id: transId?.toString(),
+        },
+        { transaction: t }
+      );
+    } else {
+      await payment.update(
+        {
+          status: "thất bại",
+          payment_date: null,
+        },
+        { transaction: t }
+      );
+    }
+
+    await t.commit();
+    return res.json({
+      resultCode: 0,
+      message: "Xử lý kết quả thanh toán thành công",
+    });
+  } catch (err) {
+    if (t && !t.finished) await t.rollback();
+    console.error("Lỗi IPN MoMo:", err);
+    return res.status(500).json({
+      message: "Lỗi hệ thống khi xử lý thanh toán",
+    });
   }
 };
 
+const retryPaymentCooldown = new Map();
 export const retryPayment = async (req, res) => {
   try {
     const { order_id } = req.body;
-    if (!order_id) 
-      return res.status(400).json({ message: "Thiếu order_id" });
+    if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
+    const COOLDOWN_MS = 60 * 1000;
+    const nowTs = Date.now();
 
-  
+    const lastCall = retryPaymentCooldown.get(order_id);
+    if (lastCall && nowTs - lastCall < COOLDOWN_MS) {
+      const waitSec = Math.ceil((COOLDOWN_MS - (nowTs - lastCall)) / 1000);
+      return res.status(429).json({
+        message: `Vui lòng chờ ${waitSec} giây trước khi thanh toán lại`,
+      });
+    }
+
     const order = await model.orders.findOne({
       where: { order_id },
       include: [
@@ -179,23 +223,20 @@ export const retryPayment = async (req, res) => {
     const now = new Date();
     const expiredAt = new Date(order.order_date.getTime() + 15 * 60 * 1000);
 
-    const isPaid = order.payment?.some((p) => p.status === "thành công") || false;
+    const isPaid =
+      order.payment?.some((p) => p.status === "thành công") || false;
 
-    
     if (!isPaid && now > expiredAt && order.status === "chờ xác nhận") {
       await cancelOrderAndRestoreStock(order_id);
       return res.status(400).json({ message: "Đơn hàng đã hết hạn và bị hủy" });
     }
 
-   
     if (order.status === "đã hủy")
       return res.status(400).json({ message: "Đơn hàng đã bị hủy" });
 
-    
     if (isPaid)
       return res.status(400).json({ message: "Đơn hàng đã được thanh toán" });
 
-   
     const newPayment = await model.payments.create({
       order_id,
       method: "MOMO",
@@ -207,6 +248,8 @@ export const retryPayment = async (req, res) => {
 
     const momoData = await prepareMomoPayment(order_id);
 
+     retryPaymentCooldown.set(order_id, Date.now());
+
     return res.json({
       message: "Tạo link thanh toán lại thành công",
       payUrl: momoData.payUrl,
@@ -217,7 +260,6 @@ export const retryPayment = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
-
 
 export const prepareMomoPayment = async (order_id) => {
   const order = await model.orders.findOne({ where: { order_id } });
@@ -262,9 +304,86 @@ export const prepareMomoPayment = async (order_id) => {
   };
 
   const result = await axios.post(endpoint, body, {
-    
     headers: { "Content-Type": "application/json" },
   });
-  
+
   return result.data;
 };
+
+// export const updatePayment = async (req, res) => {
+//   console.log("MoMo IPN nhận được:", req.body);
+//   try {
+//     const {
+//       partnerCode,
+//       orderId,
+//       requestId,
+//       amount,
+//       orderInfo,
+//       orderType,
+//       transId,
+//       resultCode,
+//       message,
+//       payType,
+//       responseTime,
+//       extraData,
+//       signature,
+//     } = req.body;
+
+//     const rawSignature = [
+//       `accessKey=${accessKey}`,
+//       `amount=${amount}`,
+//       `extraData=${extraData || ""}`,
+//       `message=${message}`,
+//       `orderId=${orderId}`,
+//       `orderInfo=${orderInfo}`,
+//       `orderType=${orderType}`,
+//       `partnerCode=${partnerCode}`,
+//       `payType=${payType || ""}`,
+//       `requestId=${requestId}`,
+//       `responseTime=${responseTime}`,
+//       `resultCode=${resultCode}`,
+//       `transId=${transId || ""}`,
+//     ].join("&");
+
+//     const checkSig = createHmac("sha256", secretKey)
+//       .update(rawSignature)
+//       .digest("hex");
+
+//     if (checkSig !== signature) {
+//       console.log("CHỮ KÝ SAI → BỎ QUA");
+//       return res.status(400).json({ message: "Invalid signature" });
+//     }
+
+//     const order_id = JSON.parse(extraData || "{}").order_id;
+//     if (!order_id) return res.status(400).json({ message: "Thiếu order_id" });
+
+//     const payments = await model.payments.findAll({
+//       where: { order_id, method: "MOMO" },
+//       order: [["payment_id", "DESC"]],
+//     });
+
+//     const payment = payments.find((p) => p.status !== "thành công");
+//     if (!payment)
+//       return res
+//         .status(404)
+//         .json({ message: "Không tìm thấy payment chưa thành công" });
+
+//     if (resultCode == 0) {
+//       await payment.update({
+//         status: "thành công",
+//         payment_date: new Date(Number(responseTime)),
+//         trans_id: transId?.toString(),
+//       });
+//     } else {
+//       await payment.update({
+//         status: "thất bại",
+//         payment_date: null,
+//       });
+//     }
+
+//     return res.json({ resultCode: 0, message: "OK" });
+//   } catch (error) {
+//     console.error("Lỗi IPN MoMo:", error);
+//     return res.status(500).json({ message: "Server error" });
+//   }
+// };

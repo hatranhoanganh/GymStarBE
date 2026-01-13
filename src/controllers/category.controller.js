@@ -264,69 +264,7 @@ const deleteCategory = async (req, res) => {
   }
 };
 
-const getCategoryByKeyWord = async (req, res) => {
-  try {
-    const { keyword = "", page = 1, limit = 10 } = req.query;
 
-    const pageNum = parseInt(page) || 1;
-    const pageSize = parseInt(limit) || 10;
-
-    const where = keyword
-      ? {
-          name: { [Op.iLike]: `%${keyword}%` },
-        }
-      : {};
-
-    const total = await model.categories.count({ where });
-
-    if (total === 0) {
-      return res.status(200).json({
-        message: "Không tìm thấy danh mục nào",
-        data: [],
-        pagination: {
-          total: 0,
-          page: 1,
-          limit: pageSize,
-          totalPages: 0,
-        },
-      });
-    }
-
-    const totalPages = Math.ceil(total / pageSize);
-
-    const validPage = Math.min(pageNum, totalPages || 1);
-    const offset = (validPage - 1) * pageSize;
-
-    const rows = await model.categories.findAll({
-      where,
-      limit: pageSize,
-      offset,
-      order: [["category_id", "ASC"]],
-    });
-
-    const formattedData = rows.map((cat) => ({
-      category_id: cat.category_id,
-      name: cat.name,
-      parent_id: cat.parent_id,
-      createdAt: formatVNDateTime(cat.createdAt),
-      updatedAt: formatVNDateTime(cat.updatedAt),
-    }));
-
-    return res.status(200).json({
-      message: "Lấy danh sách danh mục thành công",
-      data: formattedData,
-      pagination: {
-        total,
-        page: validPage,
-        limit: pageSize,
-        totalPages,
-      },
-    });
-  } catch (error) {
-    console.error("Lỗi getCategoryByKeyWord:", error);
-    return res.status(500).json({ message: "Lỗi server" });
-  }
-};
 
 const getCategoryCap1 = async (req, res) => {
   try {
@@ -451,7 +389,6 @@ export {
   getAllCategories,
   updateCategory,
   deleteCategory,
-  getCategoryByKeyWord,
   getCategoryCap1,
   getCategoryCap3LocCap1,
 };

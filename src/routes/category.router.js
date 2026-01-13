@@ -6,7 +6,6 @@ import {
     createCategory,
     updateCategory,
     deleteCategory,
-    getCategoryByKeyWord,
     getCategoryCap1,
     getCategoryCap3LocCap1,
 } from "../controllers/category.controller.js";
@@ -20,8 +19,6 @@ CategoryRouter.put("/CapNhatDanhMuc/:category_id",verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"), updateCategory);
 CategoryRouter.delete("/XoaDanhMuc/:category_id",verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"), deleteCategory);
-CategoryRouter.get("/LayDanhSachDanhMucTheoTuKhoa",verifyToken,
-  requireRole("Quản trị viên", "Quản lý sản phẩm"), getCategoryByKeyWord);
 
 CategoryRouter.get("/LayDanhSachDanhMuc", getAllCategories);
 CategoryRouter.get("/LayDanhMucCap1", getCategoryCap1);
