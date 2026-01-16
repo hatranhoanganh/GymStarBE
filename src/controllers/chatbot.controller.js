@@ -255,10 +255,10 @@ if (intent === "DELIVERY_TIME") {
       return res.json({
         answer: `Mình chưa hiểu rõ câu hỏi của bạn.
 Bạn có thể hỏi về:
-- Sản phẩm bán chạy
-- Mã giảm giá / khuyến mãi
-- Đổi trả / hủy đơn
-- Thông tin size, màu, giá`,
+- Chính sách đổi trả
+- Thời gian giao hàng
+- Phí vận chuyển
+- Chương trình khuyến mãi`,
         products: [],
       });
     }

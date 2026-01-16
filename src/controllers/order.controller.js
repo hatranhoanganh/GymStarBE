@@ -281,6 +281,9 @@ const placeCartOrder = async (req, res) => {
   try {
     t = await sequelize.transaction();
 
+     const MAX_PER_VARIANT = 10;
+    const MAX_TOTAL_QUANTITY = 30;
+
     const user_id = req.user.user_id;
     const { cart_detail_ids, address_id, note, method, promotion_code } =
       req.body;
@@ -351,6 +354,24 @@ const placeCartOrder = async (req, res) => {
       return res
         .status(404)
         .json({ message: "Giỏ hàng trống hoặc sản phẩm không thuộc về bạn" });
+    }
+    const totalQuantity = cartItems.reduce(
+      (sum, item) => sum + item.quantity,
+      0
+    );
+
+    if (totalQuantity > MAX_TOTAL_QUANTITY) {
+      return res.status(400).json({
+        message: `Mỗi đơn hàng chỉ được tối đa ${MAX_TOTAL_QUANTITY} sản phẩm`,
+      });
+    }
+
+    for (const item of cartItems) {
+      if (item.quantity > MAX_PER_VARIANT) {
+        return res.status(400).json({
+          message: `Sản phẩm "${item.product_variant.product.name}" chỉ được mua tối đa ${MAX_PER_VARIANT} cái`,
+        });
+      }
     }
 
     let totalAmount = 0;
