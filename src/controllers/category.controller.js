@@ -266,34 +266,6 @@ const deleteCategory = async (req, res) => {
 
 
 
-const getCategoryCap1 = async (req, res) => {
-  try {
-    const parentCategories = await model.categories.findAll({
-      where: { parent_id: null },
-      attributes: ["category_id", "name", "createdAt", "updatedAt"],
-      order: [["name", "ASC"]],
-    });
-
-    const formattedCategories = parentCategories.map((cat) => ({
-      category_id: cat.category_id,
-      name: cat.name,
-      createdAt: formatVNDateTime(cat.createdAt),
-      updatedAt: formatVNDateTime(cat.updatedAt),
-    }));
-
-    return res.status(200).json({
-      message: "Lấy danh mục cấp 1 thành công",
-      data: formattedCategories,
-    });
-  } catch (err) {
-    console.error("Lỗi lấy danh mục cấp 1:", err);
-    return res.status(500).json({
-      message: "Lỗi server",
-      error: err.message,
-    });
-  }
-};
-
 const getCategoryCap3LocCap1 = async (req, res) => {
   try {
     const { root_id } = req.params;
@@ -389,6 +361,5 @@ export {
   getAllCategories,
   updateCategory,
   deleteCategory,
-  getCategoryCap1,
   getCategoryCap3LocCap1,
 };

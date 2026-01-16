@@ -1410,7 +1410,6 @@ const getOrdersByStatus = async (req, res) => {
     const formatted = [];
 
     for (const order of orders) {
-   
       const hasMomoPayment =
         order.payment?.some((p) => p.method === "MOMO") || false;
 
@@ -1427,8 +1426,13 @@ const getOrdersByStatus = async (req, res) => {
         expired
       ) {
         await cancelOrderAndRestoreStock(order.order_id);
-        order.status = "đã hủy"; 
+        order.status = "đã hủy";
       }
+
+   
+      const latestPayment = (order.payment || []).sort(
+        (a, b) => b.payment_id - a.payment_id
+      )[0];
 
       let discount_amount = 0;
       if (order.promotion_usage && order.promotion_usage.promotion) {
@@ -1454,7 +1458,6 @@ const getOrdersByStatus = async (req, res) => {
         }
       }
 
-  
       const items = order.order_details.map((detail) => ({
         product_id: detail.product_variant.product.product_id,
         name: detail.product_variant.product.name,
@@ -1475,6 +1478,15 @@ const getOrdersByStatus = async (req, res) => {
         order_date: formatVNDateTime(order.order_date),
         total: Number(order.total),
         discount_amount,
+        payment: latestPayment
+          ? {
+            method: latestPayment.method,
+            status: latestPayment.status,
+            payment_date: latestPayment.payment_date
+              ? formatVNDateTime(latestPayment.payment_date)
+              : null,
+          }
+          : null,
         items,
       });
     }
@@ -1491,6 +1503,7 @@ const getOrdersByStatus = async (req, res) => {
     return res.status(500).json({ message: "Lỗi server" });
   }
 };
+
 
 
 

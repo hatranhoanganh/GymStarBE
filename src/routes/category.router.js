@@ -6,7 +6,6 @@ import {
     createCategory,
     updateCategory,
     deleteCategory,
-    getCategoryCap1,
     getCategoryCap3LocCap1,
 } from "../controllers/category.controller.js";
 
@@ -21,7 +20,6 @@ CategoryRouter.delete("/XoaDanhMuc/:category_id",verifyToken,
   requireRole("Quản trị viên", "Quản lý sản phẩm"), deleteCategory);
 
 CategoryRouter.get("/LayDanhSachDanhMuc", getAllCategories);
-CategoryRouter.get("/LayDanhMucCap1", getCategoryCap1);
 CategoryRouter.get("/LayDanhMucCap3LocCap1/:root_id", getCategoryCap3LocCap1);
 
 export default CategoryRouter;

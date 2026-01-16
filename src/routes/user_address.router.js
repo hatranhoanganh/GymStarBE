@@ -7,7 +7,6 @@ deleteAddress,
 setDefaultAddress,
 getAllUserAddresses,
 getUserAddressesById,
-getUserAddressesByKeyWord,
 
  } from "../controllers/user_address.controller.js";
 
@@ -22,7 +21,6 @@ UserAddressRouter.get("/LayDanhSachDiaChi",verifyToken, getUserAddressesById);
 
 //quản trị viên và quản lý đơn hàng
 UserAddressRouter.get("/LayDanhSachTatCaDiaChi",verifyToken,requireRole("Quản trị viên","Quản lý đơn hàng"), getAllUserAddresses);
-UserAddressRouter.get("/LayDanhSachDiaChiTheoTuKhoa",verifyToken,requireRole("Quản trị viên","Quản lý đơn hàng"),getUserAddressesByKeyWord);
 
 
 

@@ -126,7 +126,7 @@ if (intent === "RETURN") {
 Điều kiện đổi hàng:
 - Hỗ trợ đổi trong vòng 15 ngày kể từ khi nhận hàng.
 - Sản phẩm còn nguyên tem, chưa qua sử dụng.
-- Áp dụng cho các trường hợp: sản phẩm bị lỗi, giao nhầm sản phẩm hoặc không đúng mô tả.`,
+- Áp dụng cho các trường hợp: sản phẩm bị lỗi, giao nhầm sản phẩm.`,
     products: [],
   });
 }
@@ -245,8 +245,7 @@ if (intent === "DELIVERY_TIME") {
 - Khu vực nội thành: 1 – 2 ngày làm việc.
 - Khu vực ngoại thành / tỉnh: 3 – 5 ngày làm việc.
 - Thời gian có thể thay đổi tùy đơn vị vận chuyển và điều kiện thời tiết.
-
-Shop sẽ gửi mã vận đơn để bạn theo dõi khi đơn hàng được bàn giao cho đơn vị vận chuyển.`,
+`,
     products: [],
   });
 }
@@ -312,10 +311,22 @@ TRẢ LỜI:
       hfRes.data?.choices?.[0]?.message?.content ||
       "Xin lỗi, tôi chưa có thông tin phù hợp.";
 
-    return res.json({
-      answer,
-      products: relatedProducts,
-    });
+ const noDataPatterns = [
+  "không thấy thông tin",
+  "không có thông tin",
+  "chưa có dữ liệu",
+  "không tìm thấy",
+];
+
+const shouldHideProducts = noDataPatterns.some((p) =>
+  answer.toLowerCase().includes(p)
+);  
+
+return res.json({
+  answer,
+  products: shouldHideProducts ? [] : relatedProducts,
+});
+
   } catch (error) {
     console.error(error.response?.data || error.message);
     res.status(500).json({ message: "Lỗi chatbot AI" });

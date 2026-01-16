@@ -123,7 +123,7 @@ const getCart = async (req, res) => {
     if (!user_id)
       return res.status(401).json({ message: "Không tìm thấy người dùng" });
 
-   
+
     const { page = 1, limit = 10 } = req.query;
     const pageNum = parseInt(page) || 1;
     const pageSize = parseInt(limit) || 10;
@@ -143,7 +143,7 @@ const getCart = async (req, res) => {
     if (!user)
       return res.status(404).json({ message: "Người dùng không tồn tại" });
 
-    
+
     const cart = await model.carts.findOne({
       where: { user_id },
       include: [
@@ -196,10 +196,10 @@ const getCart = async (req, res) => {
       });
     }
 
-   
+
     const activeCartItems = cart.cart_details.filter((item) => {
-      const product = item.product_variant?.product;
-      return product && product.status === "đang bán";
+      return item.product_variant?.product;
+
     });
 
     const count = activeCartItems.length;
@@ -223,13 +223,13 @@ const getCart = async (req, res) => {
     const validPage = Math.min(pageNum, totalPages || 1);
     const offset = (validPage - 1) * pageSize;
 
-    
+
     const paginatedItems = activeCartItems.slice(
       offset,
       offset + pageSize
     );
 
-   
+
     const formattedCart = paginatedItems.map((item) => {
       const variant = item.product_variant;
       const product = variant.product;
@@ -262,13 +262,14 @@ const getCart = async (req, res) => {
             name: product.name,
             thumbnail: product.thumbnail,
             discount: discountPercent,
+            status: product.status,
             final_price: finalPrice.toFixed(2),
           },
         },
       };
     });
 
-    
+
     return res.status(200).json({
       message: "Lấy giỏ hàng thành công",
       total: count,

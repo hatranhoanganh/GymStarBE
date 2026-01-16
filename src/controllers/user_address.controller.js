@@ -525,109 +525,6 @@ const getUserAddressesById = async (req, res) => {
 };
 
 
-const getUserAddressesByKeyWord = async (req, res) => {
-  try {
-    const { keyword = "", page = 1, limit = 10 } = req.query;
-    const pageNum = parseInt(page, 10) || 1;
-    const pageSize = parseInt(limit, 10) || 10;
-    const searchTerm = `%${keyword.trim()}%`;
-
-   
-    const receiverCondition = Sequelize.where(
-      Sequelize.fn("unaccent", Sequelize.col("user_addresses.receiver_name")),
-      "ILIKE",
-      Sequelize.fn("unaccent", searchTerm)
-    );
-
-    const addressDetailCondition = Sequelize.where(
-      Sequelize.fn("unaccent", Sequelize.col("user_addresses.address_detail")),
-      "ILIKE",
-      Sequelize.fn("unaccent", searchTerm)
-    );
-
-    const phoneCondition = { phone: { [Op.like]: `%${keyword.trim()}%` } };
-
-    
-    const total = await model.user_addresses.count({
-      where: { [Op.or]: [receiverCondition, addressDetailCondition, phoneCondition] },
-      distinct: true,
-      col: "address_id",
-    });
-
-    if (total === 0) {
-      return res.status(200).json({
-        message: "Không tìm thấy địa chỉ phù hợp",
-        data: [],
-        pagination: { total: 0, page: 1, limit: pageSize, totalPages: 0 },
-      });
-    }
-
-    const totalPages = Math.ceil(total / pageSize);
-    const validPage = Math.min(pageNum, totalPages);
-    const offset = (validPage - 1) * pageSize;
-
-  
-    const addresses = await model.user_addresses.findAll({
-      where: { [Op.or]: [receiverCondition, addressDetailCondition, phoneCondition] },
-      include: [
-        {
-          model: model.users,
-          as: "user",
-          attributes: [
-            "user_id",
-            "full_name",
-            "email",
-            "gender",
-            "birth_date",
-            "status",
-          ],
-          include: [
-            {
-              model: model.roles,
-              as: "role",
-              attributes: ["role_id", "role_name"],
-            },
-          ],
-        },
-      ],
-      limit: pageSize,
-      offset,
-      distinct: true,
-    });
-
-    const formattedData = addresses.map((addr) => ({
-      address_id: addr.address_id,
-      receiver_name: addr.receiver_name,
-      phone: addr.phone,
-      address_detail: addr.address_detail,
-      is_default: addr.is_default,
-      user: {
-        user_id: addr.user.user_id,
-        full_name: addr.user.full_name,
-        email: addr.user.email,
-        gender: addr.user.gender,
-        birth_date: addr.user.birth_date
-          ? formatVNDate(addr.user.birth_date)
-          : null,
-        status: addr.user.status,
-        role_id: addr.user.role?.role_id || null,
-        role_name: addr.user.role?.role_name || null,
-        createdAt: formatVNDateTime(addr.user.createdAt),
-        updatedAt: formatVNDateTime(addr.user.updatedAt),
-      },
-    }));
-
-    return res.status(200).json({
-      message: "Tìm kiếm địa chỉ thành công",
-      data: formattedData,
-      pagination: { total, page: validPage, limit: pageSize, totalPages },
-    });
-  } catch (err) {
-    console.error("Lỗi getUserAddressesByKeyWord:", err);
-    return res.status(500).json({ message: "Lỗi server", error: err.message });
-  }
-};
-
 
 export {
   addAddress,
@@ -636,5 +533,4 @@ export {
   setDefaultAddress,
   getAllUserAddresses,
   getUserAddressesById,
-  getUserAddressesByKeyWord,
 };
